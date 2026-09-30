@@ -120,7 +120,7 @@ function fixture(opts: { status?: string; sentAt?: string; existingPipeline?: Re
   const source = readFileSync("apps-script/Code.gs", "utf8");
   runInNewContext(source, context);
   const run = (functionName: string, ...args: unknown[]) =>
-    (context as Record<string, (...args: unknown[]) => { text: string }>)[functionName](...args);
+    (context as unknown as Record<string, (...args: unknown[]) => { text: string }>)[functionName](...args);
   return { sheets, run, get locks() { return locks; }, get flushes() { return flushes; } };
 }
 
