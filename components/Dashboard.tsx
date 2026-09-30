@@ -510,6 +510,7 @@ export default function Dashboard() {
 
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
   const readyCount = data?.counts["send-now"] ?? 0;
+  const queueCount = data?.counts.queue ?? 0;
   const run = data?.latestRun;
   const runState = classifyRunHealth(run ?? null, data?.syncedAt ?? new Date().toISOString(), readyCount);
   const lastVerified = data?.syncedAt
@@ -540,7 +541,8 @@ export default function Dashboard() {
           <h1>{view === "send-now" ? <>SEND <em>NOW</em></> : activeView}</h1>
         </div>
         <div className="command-metrics">
-          <div><span>READY</span><strong>{String(readyCount).padStart(2, "0")}</strong><small>/ 15 BUFFER</small></div>
+          <div><span>READY</span><strong>{String(readyCount).padStart(2, "0")}</strong><small>SENDABLE</small></div>
+          <div><span>QUEUE</span><strong>{String(queueCount).padStart(2, "0")}</strong><small>DRIVE TO ZERO</small></div>
           <div><span>SENT TODAY</span><strong>{String(sentToday).padStart(2, "0")}</strong><small>HUMAN CONTROLLED</small></div>
         </div>
       </header>
