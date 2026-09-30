@@ -1,4 +1,4 @@
-export type ProspectView = "send-now" | "market" | "research" | "hold" | "sent" | "replied" | "all";
+export type ProspectView = "send-now" | "queue" | "rejected" | "sent" | "replied";
 
 export interface Prospect {
   id: string;

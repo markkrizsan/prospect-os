@@ -252,15 +252,37 @@ export function outreachCopyIssues(item: Pick<Prospect, "contactPath" | "subject
   return issues;
 }
 
+function isRejectedState(status: string): boolean {
+  return status.includes("reject") || status.includes("opt out") || status.includes("suppressed");
+}
+
+function isPromotedMarketState(status: string): boolean {
+  return status === "promote" || status === "promoted";
+}
+
+/**
+ * The operator UI intentionally exposes only meaningful lifecycle views.
+ * QUEUE is the entire non-terminal backlog: discovery/research/hold/re-audit and
+ * any incomplete operational record. Internal source-stage labels remain visible
+ * inside cards but never become separate dashboard tabs.
+ */
 export function inView(item: Prospect, view: ProspectView): boolean {
   const status = normalizeKey(item.status);
-  if (view === "send-now") return item.readyValidated === true && !item.sentAt;
-  if (view === "market") return item.source.toLowerCase() === "market";
-  if (view === "research") return status.includes("research");
-  if (view === "hold") return status.includes("hold");
-  if (view === "sent") return Boolean(item.sentAt) || status === "sent";
-  if (view === "replied") return Boolean(item.repliedAt) || status.includes("replied") || status === "reply";
-  return true;
+  const sent = Boolean(item.sentAt) || status === "sent";
+  const replied = Boolean(item.repliedAt) || status.includes("replied") || status === "reply";
+  const rejected = isRejectedState(status);
+  const ready = item.readyValidated === true && !item.sentAt;
+
+  if (view === "send-now") return ready;
+  if (view === "sent") return sent;
+  if (view === "replied") return replied;
+  if (view === "rejected") return rejected;
+  if (view === "queue") {
+    if (ready || sent || replied || rejected) return false;
+    if (item.source.toLowerCase() === "market" && isPromotedMarketState(status)) return false;
+    return true;
+  }
+  return false;
 }
 
 function runNumber(value: string): number | null {
@@ -297,7 +319,7 @@ function latestRun(payload: unknown): RunMetrics | null {
 
 export function normalizePayload(payload: unknown, syncedAt = new Date().toISOString()): ProspectData {
   const { prospects, issues: consistencyIssues } = joinOperational(collect(payload));
-  const views: ProspectView[] = ["send-now", "market", "research", "hold", "sent", "replied", "all"];
+  const views: ProspectView[] = ["send-now", "queue", "rejected", "sent", "replied"];
   return {
     latestRun: latestRun(payload),
     syncedAt,

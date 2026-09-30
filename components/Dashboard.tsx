@@ -7,12 +7,10 @@ import { classifyRunHealth } from "@/lib/runHealth";
 
 const VIEWS: Array<{ id: ProspectView; label: string }> = [
   { id: "send-now", label: "SEND NOW" },
-  { id: "market", label: "MARKET" },
-  { id: "research", label: "RESEARCH" },
-  { id: "hold", label: "HOLD" },
+  { id: "queue", label: "QUEUE" },
+  { id: "rejected", label: "REJECTED" },
   { id: "sent", label: "SENT" },
   { id: "replied", label: "REPLIED" },
-  { id: "all", label: "ALL" },
 ];
 
 const SNAPSHOT_KEY = "prospect-os-v10:last-verified";
@@ -626,7 +624,7 @@ export default function Dashboard() {
 
       <footer className="system-footer">
         <span>GOOGLE SHEETS / SINGLE SOURCE OF TRUTH</span>
-        <span>← → NAVIGATE / C COPY ALL / Z MAIL / V SITE</span>
+        <span>QUEUE → QUALIFY → SEND NOW → SENT / REJECTED</span>
         <span>{refreshing ? "SYNCING LIVE DATA…" : stale && lastVerified ? `CACHED · LAST VERIFIED ${lastVerified}` : lastVerified ? `SYNCED ${lastVerified}` : "NOT YET SYNCED"}</span>
       </footer>
 

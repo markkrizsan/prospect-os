@@ -100,20 +100,21 @@ test("historical V9 ID can be V10 READY only after both records meet V10 gates",
   assert.equal(missing.counts["send-now"], 0);
 });
 
-test("MARKET research remains separate and cannot override operational status", () => {
+test("QUEUE collapses research and hold into one actionable backlog without hiding terminal records", () => {
   const data = normalizePayload({
     MARKET: [
       { "Market ID": "V10-M001", "Company / Person": "Research Co", Screen: "RESEARCH",
         "Business Signal": "Strong company", "Digital Signal": "Buried proof" },
       { "Market ID": "V10-M002", "Company / Person": "Hold Co", Screen: "HOLD" },
+      { "Market ID": "V10-M003", "Company / Person": "Rejected Co", Screen: "REJECT — WEAK VALUE GAP" },
+      { "Market ID": "V10-M004", "Company / Person": "Promoted Co", Screen: "PROMOTE" },
     ],
     OPPORTUNITIES: [opportunity()], OUTREACH: [outreach()],
   });
-  assert.equal(data.counts.market, 2);
-  assert.equal(data.counts.research, 1);
-  assert.equal(data.counts.hold, 1);
+  assert.equal(data.counts.queue, 2);
+  assert.equal(data.counts.rejected, 1);
   assert.equal(data.counts["send-now"], 1);
-  assert.equal(data.prospects.length, 3);
+  assert.equal(data.prospects.length, 5);
   assert.equal(data.prospects[0].businessStrength, "Strong company");
 });
 
@@ -158,12 +159,14 @@ test("latest RUNS entry preserves unknown metric state rather than reporting fic
   assert.equal(normalizePayload({}).latestRun, null);
 });
 
-test("a rejected prospect cannot be shown in the manual send queue", () => {
+test("a rejected prospect cannot be shown in SEND NOW and is preserved in REJECTED", () => {
   const data = normalizePayload({
     OPPORTUNITIES: [opportunity()], OUTREACH: [outreach("V10-O100", { Status: "REJECTED" })],
   });
   assert.equal(data.counts["send-now"], 0);
+  assert.equal(data.counts.rejected, 1);
   assert.equal(inView(data.prospects[0], "send-now"), false);
+  assert.equal(inView(data.prospects[0], "rejected"), true);
 });
 
 test("legacy READY research under explicit V10 RE-AUDIT stays out of queue without a false corruption alert", () => {
