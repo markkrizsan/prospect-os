@@ -12,7 +12,15 @@ function configuration() {
 
 async function parseResponse(response: Response, secret: string): Promise<unknown> {
   const text = await response.text();
-  if (!response.ok) throw new Error(`Apps Script returned ${response.status}: ${text.slice(0, 180).replaceAll(secret, "[redacted]")}`);
+  if (!response.ok) {
+    if (response.status === 404) throw new Error(
+      "Apps Script deployment returned HTTP 404. Verify that Vercel PROSPECT_API_URL matches the current Apps Script Web app /exec URL (not the editor, /dev, or an archived deployment). Updating GitHub or deploying Vercel does not update Apps Script."
+    );
+    throw new Error(`Apps Script returned HTTP ${response.status}. Check the active Web app deployment and execution permissions.`);
+  }
+  if (/^\s*<(?:!doctype|html)/i.test(text)) throw new Error(
+    "Apps Script returned an HTML page instead of JSON. Verify the active Web app /exec URL and access/execute-as settings; do not paste secrets into chat."
+  );
   try {
     const payload = JSON.parse(text) as unknown;
     if (payload && typeof payload === "object" && (payload as { ok?: unknown }).ok === false) {
