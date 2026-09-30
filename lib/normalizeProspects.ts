@@ -122,7 +122,16 @@ function joinOperational(
     if (group.opportunity.length > 1) entryIssues.push("duplicate OPPORTUNITIES ID");
     if (group.outreach.length > 1) entryIssues.push("duplicate OUTREACH ID");
     if (!opportunity) entryIssues.push("missing OPPORTUNITIES row");
-    if (!outreach) entryIssues.push("missing OUTREACH row");
+    // OPPORTUNITIES may legitimately contain research/re-audit backlog before an
+    // OUTREACH row exists. Only an operational claim (READY/SENT/REJECTED) without
+    // OUTREACH is an integrity fault.
+    const opportunityState = normalizeKey(opportunity?.status || "");
+    const opportunityClaimsOperational = Boolean(opportunity) && (
+      isReadyState(opportunity?.status || "") ||
+      opportunityState === "sent" ||
+      opportunityState === "rejected"
+    );
+    if (!outreach && opportunityClaimsOperational) entryIssues.push("missing OUTREACH row");
 
     const combined: Prospect = {
       ...(opportunity ?? outreach)!,
@@ -139,12 +148,17 @@ function joinOperational(
     };
     const opState = normalizeKey(opportunity?.status || "");
     const outState = normalizeKey(outreach?.status || "");
-    // Older V9 opportunities retain their original READY label while OUTREACH is
-    // deliberately V10 RE-AUDIT/HOLD. This is a blocked queue state, not corruption.
-    const expectedLegacyReview = isReadyState(opportunity?.status || "") &&
-      (outState.includes("re audit") || outState.includes("hold"));
-    if (opportunity && outreach && opState !== outState && !expectedLegacyReview &&
-        !(isReadyState(opportunity.status) && isReadyState(outreach.status))) {
+    // OUTREACH owns lifecycle. OPPORTUNITIES can carry research-stage labels such as
+    // NEEDS CHANNEL while OUTREACH is RE-AUDIT/HOLD. Only a READY claim from OUTREACH
+    // without matching READY evidence, or a terminal SENT/REJECTED disagreement, is
+    // a real cross-source integrity fault.
+    const terminalStates = new Set(["sent", "rejected"]);
+    const readyConflict = Boolean(outreach && isReadyState(outreach.status) &&
+      !isReadyState(opportunity?.status || ""));
+    const terminalConflict = Boolean(opportunity && outreach &&
+      (terminalStates.has(opState) || terminalStates.has(outState)) &&
+      opState !== outState);
+    if (readyConflict || terminalConflict) {
       entryIssues.push("OPPORTUNITIES/OUTREACH status disagreement");
     }
     if (opportunity?.company && outreach?.company &&

@@ -175,3 +175,26 @@ test("legacy READY research under explicit V10 RE-AUDIT stays out of queue witho
   assert.equal(data.prospects[0].status, "V10 RE-AUDIT");
   assert.equal(data.consistencyIssues.length, 0);
 });
+
+test("research-stage OPPORTUNITIES status may differ from OUTREACH review status without a false integrity warning", () => {
+  const data = normalizePayload({
+    OPPORTUNITIES: [opportunity("V9-O003", { Status: "NEEDS CHANNEL" })],
+    OUTREACH: [outreach("V9-O003", { Status: "V10 RE-AUDIT", "Email / Channel": "" })],
+  });
+  assert.equal(data.counts["send-now"], 0);
+  assert.equal(data.prospects[0].status, "V10 RE-AUDIT");
+  assert.equal(data.consistencyIssues.length, 0);
+});
+
+test("re-audit OPPORTUNITY backlog may exist without OUTREACH, but a READY orphan remains an integrity fault", () => {
+  const backlog = normalizePayload({
+    OPPORTUNITIES: [opportunity("V9-O031", { Status: "V10 RE-AUDIT" })],
+  });
+  assert.equal(backlog.counts["send-now"], 0);
+  assert.equal(backlog.consistencyIssues.length, 0);
+
+  const staleReady = normalizePayload({
+    OPPORTUNITIES: [opportunity("V9-O032", { Status: "READY" })],
+  });
+  assert.match(staleReady.consistencyIssues.join(" "), /missing OUTREACH/);
+});
