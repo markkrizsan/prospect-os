@@ -6,7 +6,7 @@ import test from "node:test";
 type Datum = string | Date;
 class FakeSheet {
   rows: Datum[][];
-  constructor(rows: Datum[][]) { this.rows = rows; }
+  constructor(rows: Datum[][]) { this.rows = rows.map((row) => [...row]); }
   getLastRow() { return this.rows.length; }
   getLastColumn() { return Math.max(0, ...this.rows.map((r) => r.length)); }
   appendRow(row: Datum[]) { this.rows.push([...row]); }
