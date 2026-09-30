@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { inView, outreachQualityIssues } from "@/lib/normalizeProspects";
+import { composeOutboundPacket, extractRecipientEmail, inView, outreachCopyIssues } from "@/lib/normalizeProspects";
 import type { Prospect, ProspectData, ProspectView } from "@/lib/types";
 
 const VIEWS: Array<{ id: ProspectView; label: string }> = [
@@ -69,16 +69,15 @@ function SendFocus({
   onNotice: (message: string) => void;
 }) {
   const site = cleanUrl(item.website);
-  const email = [item.subjectLine ? `Subject: ${item.subjectLine}` : "", item.outreachDraft]
-    .filter(Boolean)
-    .join("\n\n");
-  const copyIssues = outreachQualityIssues(item);
+  const recipient = extractRecipientEmail(item.contactPath);
+  const email = composeOutboundPacket(item);
+  const copyIssues = outreachCopyIssues(item);
   const copyBlocked = copyIssues.length > 0;
 
   const copyEmail = useCallback(async () => {
     if (!email || copyBlocked) return;
     await navigator.clipboard.writeText(email);
-    onNotice(`${item.company || item.id} email copied`);
+    onNotice(`${item.company || item.id}: recipient, subject and message copied`);
   }, [copyBlocked, email, item.company, item.id, onNotice]);
 
   useEffect(() => {
@@ -163,6 +162,7 @@ function SendFocus({
         <div className="compose-top">
           <span className="micro-label">OUTREACH / READY TO SEND</span>
           <strong>{present(item.subjectLine)}</strong>
+          <p className="compose-recipient">TO / {recipient || "RECIPIENT EMAIL MISSING"}</p>
         </div>
 
         <div className="compose-draft">{present(item.outreachDraft)}</div>
@@ -175,7 +175,7 @@ function SendFocus({
         )}
 
         <div className="compose-actions">
-          <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY EMAIL <kbd>C</kbd></button>
+          <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY ALL <kbd>C</kbd></button>
           <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO <kbd>Z</kbd></a>
           {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE <kbd>V</kbd></a> : <button disabled>VIEW SITE</button>}
           <button className="reject" onClick={() => void onReject(item)} disabled={busy}>REJECT</button>
@@ -186,7 +186,7 @@ function SendFocus({
 
         <div className="keyboard-hint">
           <span>← →</span> MOVE QUEUE
-          <span>C</span> COPY
+          <span>C</span> COPY ALL
           <span>Z</span> MAIL
           <span>V</span> SITE
         </div>
@@ -209,14 +209,14 @@ function ProspectCard({
   onNotice: (message: string) => void;
 }) {
   const site = cleanUrl(item.website);
-  const email = [item.subjectLine ? `Subject: ${item.subjectLine}` : "", item.outreachDraft].filter(Boolean).join("\n\n");
-  const copyIssues = outreachQualityIssues(item);
+  const email = composeOutboundPacket(item);
+  const copyIssues = outreachCopyIssues(item);
   const copyBlocked = copyIssues.length > 0;
 
   async function copyEmail() {
     if (!email || copyBlocked) return;
     await navigator.clipboard.writeText(email);
-    onNotice(`${item.company || item.id} email copied`);
+    onNotice(`${item.company || item.id}: recipient, subject and message copied`);
   }
 
   return (
@@ -260,7 +260,7 @@ function ProspectCard({
 
       <footer className="actions">
         {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
-        <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY EMAIL</button>
+        <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY ALL</button>
         <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
         <button className="reject" onClick={() => void onReject(item)} disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}>REJECT</button>
         <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy || Boolean(item.sentAt)}>
@@ -503,7 +503,7 @@ export default function Dashboard() {
 
       <footer className="system-footer">
         <span>GOOGLE SHEETS / SINGLE SOURCE OF TRUTH</span>
-        <span>← → NAVIGATE / C COPY / Z MAIL / V SITE</span>
+        <span>← → NAVIGATE / C COPY ALL / Z MAIL / V SITE</span>
         <span>V10 / EXECUTION INTERFACE</span>
       </footer>
 

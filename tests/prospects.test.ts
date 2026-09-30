@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inView, normalizePayload, outreachQualityIssues } from "../lib/normalizeProspects";
+import { composeOutboundPacket, extractRecipientEmail, inView, normalizePayload, outreachCopyIssues, outreachQualityIssues } from "../lib/normalizeProspects";
 
 test("normalizes and merges V10 OUTREACH with OPPORTUNITIES", () => {
   const data = normalizePayload({
@@ -65,4 +65,24 @@ test("exposes MARKET records and research/hold counts", () => {
   assert.equal(data.prospects[0].company, "Research Co");
   assert.equal(data.prospects[0].businessStrength, "Strong business");
   assert.equal(data.prospects[0].commercialGap, "Weak site");
+});
+
+test("COPY ALL includes verified OUTREACH recipient, subject and entire draft", () => {
+  const data = normalizePayload({
+    OUTREACH: [{ "Opportunity ID": "V10-O100", Status: "V10 READY", "Email / Channel": "team@sample.test", "Subject Line": "A specific idea", "Finished Outreach Draft": "Hi team,\n\nI noticed the quote form.\n\nMark" }],
+    OPPORTUNITIES: [{ "Opportunity ID": "V10-O100", Company: "Sample Co" }],
+  });
+  const item = data.prospects[0];
+  assert.equal(item.contactPath, "team@sample.test");
+  assert.equal(composeOutboundPacket(item), "To: team@sample.test\nSubject: A specific idea\n\nHi team,\n\nI noticed the quote form.\n\nMark");
+  assert.deepEqual(outreachCopyIssues(item), []);
+});
+
+test("COPY ALL extracts annotated published address and refuses guessed addresses", () => {
+  assert.equal(extractRecipientEmail("christine@am-ko.com — direct email published on site"), "christine@am-ko.com");
+  assert.equal(extractRecipientEmail("Company contact — personal address UNKNOWN"), "");
+  assert.equal(extractRecipientEmail("guessed firstname@company.test — unverified"), "");
+  const item = { contactPath: "guessed firstname@company.test", subjectLine: "Your homepage", outreachDraft: "Hi team,\n\nA useful idea.\n\nMark" };
+  assert.equal(composeOutboundPacket(item), "");
+  assert.deepEqual(outreachCopyIssues(item), ["verified recipient email missing"]);
 });

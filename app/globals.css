@@ -272,6 +272,7 @@ main{padding:0 max(16px,4vw) 78px}
   font:400 26px/1.05 Georgia,"Times New Roman",serif;
   color:white;
 }
+.compose-recipient{margin:13px 0 0;color:#bbb3a9;font:700 9px/1.4 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;overflow-wrap:anywhere}
 .compose-draft{
   flex:1;white-space:pre-wrap;
   padding:28px 24px;

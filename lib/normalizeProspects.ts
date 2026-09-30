@@ -55,7 +55,7 @@ function prospect(record: UnknownRecord, source: string): Prospect {
     person: pick(record, "Person", "Contact Name", "Contact", "Decision Maker"),
     role: pick(record, "Role", "Title", "Person Role"),
     website: pick(record, "Website", "Company URL", "URL"),
-    contactPath: pick(record, "Contact Path", "Email", "Contact URL", "Contact Method"),
+    contactPath: pick(record, "Contact Path", "Email / Channel", "Verified Email", "Recipient Email", "Email", "Contact URL", "Contact Method"),
     businessStrength: pick(record, "Business Strength Evidence", "Business Strength", "Business (FACT)", "Business Signal", "Strength"),
     commercialGap: pick(record, "Digital Reality / Gap", "Digital/Commercial Gap", "Digital Commercial Gap", "Digital Signal", "Commercial Gap", "Digital Gap"),
     interventionDelta: pick(record, "Mark Intervention Delta", "Intervention Delta", "Mark Delta"),
@@ -119,6 +119,29 @@ const PROSPECT_FACING_JARGON = [
 export function outreachQualityIssues(item: Pick<Prospect, "subjectLine" | "outreachDraft">): string[] {
   const text = `${item.subjectLine}\n${item.outreachDraft}`.toLowerCase();
   return PROSPECT_FACING_JARGON.filter((phrase) => text.includes(phrase));
+}
+
+/** Extract an actual email from a verified Sheet contact field, preserving annotations outside the clipboard. */
+export function extractRecipientEmail(contactPath: string): string {
+  if (/\b(guessed|unverified|not verified|inferred|hypothetical|unconfirmed|needs verification)\b/i.test(contactPath)) return "";
+  return contactPath.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? "";
+}
+
+/** A single clipboard packet that can be split into the Zoho To, Subject and message fields. */
+export function composeOutboundPacket(item: Pick<Prospect, "contactPath" | "subjectLine" | "outreachDraft">): string {
+  const recipient = extractRecipientEmail(item.contactPath);
+  const subject = item.subjectLine.trim();
+  const body = item.outreachDraft.trim();
+  if (!recipient || !subject || !body) return "";
+  return `To: ${recipient}\nSubject: ${subject}\n\n${body}`;
+}
+
+export function outreachCopyIssues(item: Pick<Prospect, "contactPath" | "subjectLine" | "outreachDraft">): string[] {
+  const issues = outreachQualityIssues(item);
+  if (!extractRecipientEmail(item.contactPath)) issues.push("verified recipient email missing");
+  if (!item.subjectLine.trim()) issues.push("subject line missing");
+  if (!item.outreachDraft.trim()) issues.push("draft message missing");
+  return issues;
 }
 
 export function inView(item: Prospect, view: ProspectView): boolean {
