@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { composeOutboundPacket, extractRecipientEmail, inView, outreachCopyIssues } from "@/lib/normalizeProspects";
 import type { Prospect, ProspectData, ProspectView } from "@/lib/types";
+import { classifyRunHealth } from "@/lib/runHealth";
 
 const VIEWS: Array<{ id: ProspectView; label: string }> = [
   { id: "send-now", label: "SEND NOW" },
@@ -427,7 +428,7 @@ export default function Dashboard() {
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
   const readyCount = data?.counts["send-now"] ?? 0;
   const run = data?.latestRun;
-  const runState = !run ? "AWAITING FIRST RUN" : (run.readyStart !== null && run.readyStart >= 10) ? "BUFFER HEALTHY" : run.persistence.toUpperCase().includes("BLOCKED") ? "PERSISTENCE BLOCKED" : (run.readyAdded ?? 0) >= 5 ? "TARGET MET" : "SHORT OF TARGET";
+  const runState = classifyRunHealth(run ?? null, data?.syncedAt ?? new Date().toISOString(), readyCount);
 
   return (
     <>
@@ -473,7 +474,7 @@ export default function Dashboard() {
       </nav>
 
       <section className="run-strip" aria-label="Last hourly production run">
-        <div><span>LAST RUN</span><strong>{run?.localTime || "NOT YET RECORDED"}</strong></div>
+        <div><span>LATEST CYCLE</span><strong>{run?.localTime || "NOT YET RECORDED"}</strong></div>
         <div><span>VERIFIED NEW READY / 05</span><strong>{run?.readyAdded ?? "—"} / 05</strong></div>
         <div><span>SCREENED / DEEP AUDITS</span><strong>{run ? `${run.screened ?? "—"} / ${run.audited ?? "—"}` : "— / —"}</strong></div>
         <div><span>ACCEPTANCE</span><strong>{runState}</strong></div>
