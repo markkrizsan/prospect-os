@@ -319,7 +319,7 @@ function latestRun(payload: unknown): RunMetrics | null {
 export function normalizePayload(payload: unknown, syncedAt = new Date().toISOString()): ProspectData {
   const { prospects, issues: consistencyIssues } = joinOperational(collect(payload));
   const views: ProspectView[] = ["send-now", "queue", "rejected", "sent", "replied"];
-  const root = record(payload);
+  const root = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as UnknownRecord : {};
   return {
     latestRun: latestRun(payload),
     syncedAt,
