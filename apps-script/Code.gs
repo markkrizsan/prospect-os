@@ -88,6 +88,7 @@ function syncSent_() {
   const sheet = requiredSheet_(spreadsheet, "OUTREACH");
   const headers = headerMap_(sheet);
   const values = sheet.getDataRange().getDisplayValues();
+  const rawValues = sheet.getDataRange().getValues();
   const idColumn = requiredColumn_(headers, "Opportunity ID") - 1;
   const statusColumn = requiredColumn_(headers, "Status") - 1;
   const sentColumn = requiredColumn_(headers, "Sent At") - 1;
@@ -99,7 +100,7 @@ function syncSent_() {
     const record = values[index];
     if (String(record[statusColumn] || "").trim().toUpperCase() !== "SENT") continue;
     const id = String(record[idColumn] || "").trim();
-    const stamp = parseDate_(record[sentColumn]);
+    const stamp = parseDate_(rawValues[index][sentColumn] || record[sentColumn]);
     if (!id || !stamp) { missingTimestamps += 1; continue; }
     const oppSheet = requiredSheet_(spreadsheet, "OPPORTUNITIES");
     const oppRow = findOpportunityRow_(oppSheet, id);
@@ -218,7 +219,16 @@ function businessDayOffset_(stamp, days, timezone) {
 
 function parseDate_(value) {
   if (!value) return null;
-  const stamp = value instanceof Date ? value : new Date(value);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const text = String(value).trim();
+  // Sheets can contain a formatted calendar date string. Do not let JS interpret a
+  // date-only string at UTC midnight: that shifts it into the previous California day.
+  const us = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dateOnly = us
+    ? us[3] + "-" + ("0" + us[1]).slice(-2) + "-" + ("0" + us[2]).slice(-2)
+    : iso ? text : "";
+  const stamp = new Date(dateOnly ? dateOnly + "T18:00:00Z" : text);
   return Number.isNaN(stamp.getTime()) ? null : stamp;
 }
 
