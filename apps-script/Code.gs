@@ -57,6 +57,7 @@ function list_() {
 
 function markSent_(id, sentAt) {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  assertReconciliationSchema_(spreadsheet);
   // Validate BOTH records before any mutation. Partial one-sided records are a production incident.
   const opportunity = requiredRecord_(spreadsheet, "OPPORTUNITIES", id);
   const outreach = requiredRecord_(spreadsheet, "OUTREACH", id);
@@ -85,6 +86,7 @@ function markSent_(id, sentAt) {
 
 function syncSent_() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  assertReconciliationSchema_(spreadsheet);
   const sheet = requiredSheet_(spreadsheet, "OUTREACH");
   const headers = headerMap_(sheet);
   const values = sheet.getDataRange().getDisplayValues();
@@ -161,7 +163,7 @@ function upsertPipeline_(spreadsheet, opportunity, outreach, stamp, due, replied
   if (isNew) {
     setIfBlank_(existing, "Outcome / Learning", "Sent recorded by Mark; no reply or commercial outcome inferred.");
     setIfBlank_(existing, "Source", "V10 / USER SEND");
-    setIfBlank_(existing, "Message Angle", getByHeader_(outreach, "Subject Line"));
+    setIfBlank_(existing, "Message Angle", getByHeader_(outreach, "Subject"));
   }
 }
 
@@ -230,6 +232,28 @@ function parseDate_(value) {
     : iso ? text : "";
   const stamp = new Date(dateOnly ? dateOnly + "T18:00:00Z" : text);
   return Number.isNaN(stamp.getTime()) ? null : stamp;
+}
+
+/** Guard actual LIVE headers before writing even one cell: no partial pipeline inserts. */
+function assertReconciliationSchema_(spreadsheet) {
+  const required = {
+    "OPPORTUNITIES": ["Opportunity ID", "Status", "Company", "Offer Lane"],
+    "OUTREACH": ["Opportunity ID", "Status", "Company", "Person", "Subject", "Sent At",
+      "Mark Approved?", "Follow-up Due", "Reply?", "Next Move"],
+    "PIPELINE": ["Opportunity ID", "Company", "Person", "Stage", "Offer Lane",
+      "First Touch", "Last Touch", "Reply?", "Next Action", "Next Action Date",
+      "Outcome / Learning", "Source", "Message Angle"],
+  };
+  Object.keys(required).forEach(function(name) {
+    const sheet = requiredSheet_(spreadsheet, name);
+    const headers = headerMap_(sheet);
+    required[name].forEach(function(column) { requiredColumn_(headers, column); });
+  });
+  const today = requiredSheet_(spreadsheet, "TODAY");
+  const headers = today.getRange(7, 1, 1, today.getLastColumn()).getDisplayValues()[0];
+  if (!headers.some(function(value) {
+    return normalizeHeader_(value) === normalizeHeader_("Opportunity ID");
+  })) throw new Error("TODAY row 7 Opportunity ID header missing");
 }
 
 function requiredSheet_(spreadsheet, name) {
