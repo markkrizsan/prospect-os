@@ -71,6 +71,14 @@ export async function diagnoseProspectPayload(): Promise<unknown> {
 }
 
 async function mutateProspect(action: "MARK_SENT" | "REJECT", id: string, reason = ""): Promise<ProspectData> {
+  // A direct API caller must never bypass the dashboard's joined-record send gate.
+  if (action === "MARK_SENT") {
+    const before = await readProspects();
+    const item = before.prospects.find((candidate) => candidate.id === id && candidate.source === "OUTREACH");
+    if (!item?.readyValidated) {
+      throw new Error("This prospect is not fully READY in both source records. Refresh and review before marking SENT.");
+    }
+  }
   const endpointAction = action === "MARK_SENT" ? "markSent" : "reject";
   const { target, secret } = endpoint(endpointAction);
   const response = await fetchAppsScriptResponse(target, {
