@@ -402,13 +402,23 @@ function materializeQualified_() {
   const economicsColumn = requiredColumn_(marketHeaders, "Economics Proxy") - 1;
   const offerColumn = requiredColumn_(marketHeaders, "Offer Lane") - 1;
   const reasonColumn = requiredColumn_(marketHeaders, "Reason") - 1;
+  const signalColumn = requiredColumn_(marketHeaders, "Signal Strength") - 1;
   const checkedColumn = requiredColumn_(marketHeaders, "Last Checked") - 1;
-  const stats = { ok: true, checked: 0, materialized: 0, noOwnedEmail: 0, alreadyMaterialized: 0, failures: [] };
+  const stats = { ok: true, checked: 0, materialized: 0, noOwnedEmail: 0, rebuildConflict: 0, alreadyMaterialized: 0, failures: [] };
   const limit = 5;
 
-  for (let index = 1; index < values.length && stats.checked < limit; index += 1) {
+  const candidates = [];
+  for (let index = 1; index < values.length; index += 1) {
     const row = values[index];
     if (String(row[screenColumn] || "").trim().toUpperCase() !== "QUALIFIED — MATERIALIZE") continue;
+    const signal = String(row[signalColumn] || "").trim().toUpperCase();
+    candidates.push({ index: index, row: row, rank: signal === "P1" ? 0 : signal === "P2" ? 1 : 2 });
+  }
+  candidates.sort(function (a, b) { return a.rank - b.rank || a.index - b.index; });
+
+  for (let candidateIndex = 0; candidateIndex < candidates.length && stats.checked < limit; candidateIndex += 1) {
+    const index = candidates[candidateIndex].index;
+    const row = candidates[candidateIndex].row;
     stats.checked += 1;
     const marketId = String(row[idColumn] || "").trim();
     const company = String(row[companyColumn] || "").trim();
@@ -427,10 +437,17 @@ function materializeQualified_() {
     }
 
     const emailEvidence = findOwnedSiteEmail_(website);
+    if (emailEvidence.rebuildConflict) {
+      stats.rebuildConflict += 1;
+      setByHeader_(market, index + 1, marketHeaders, "Screen", "REJECT — ACTIVE REBUILD CONFLICT");
+      setByHeader_(market, index + 1, marketHeaders, "Last Checked", todayInSheet_(spreadsheet));
+      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materializer recheck found an active website replacement signal on the owned site; qualification revoked before contact creation.");
+      continue;
+    }
     if (!emailEvidence.email) {
       stats.noOwnedEmail += 1;
       setByHeader_(market, index + 1, marketHeaders, "Last Checked", todayInSheet_(spreadsheet));
-      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materializer found no public email on the owned pages checked; remains queued for contact resolution.");
+      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materializer found no public email on the owned pages checked; remains QUALIFIED — MATERIALIZE for later contact resolution.");
       continue;
     }
 
@@ -439,6 +456,19 @@ function materializeQualified_() {
     const economics = String(row[economicsColumn] || "").trim();
     const offerLane = String(row[offerColumn] || "").trim() || "Web Design + Development";
     const reason = String(row[reasonColumn] || "").trim();
+    const priority = String(row[signalColumn] || "").trim().toUpperCase() || "P2";
+    const pain = qualificationSignal_(reason, "PAIN", "MEDIUM");
+    const economicsSignal = qualificationSignal_(reason, "ECONOMICS", economics ? "MEDIUM" : "UNKNOWN");
+    const authority = qualificationSignal_(reason, "AUTHORITY", "REALISTIC");
+    const scope = qualificationSignal_(reason, "SCOPE", "PASS");
+    const timing = qualificationSignal_(reason, "TIMING", "NONE");
+    const intent = qualificationSignal_(reason, "INTENT", "NONE");
+    const confidence = qualificationSignal_(reason, "CONFIDENCE", "MEDIUM");
+    if (scope !== "PASS") {
+      setByHeader_(market, index + 1, marketHeaders, "Screen", "REJECT — SCOPE CONFLICT");
+      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materializer refused contact creation because SCOPE did not pass.");
+      continue;
+    }
     const opportunityId = nextOpportunityId_(opportunities);
     const person = company + " team";
     const role = "Company team";
@@ -465,10 +495,10 @@ function materializeQualified_() {
       "Service Idea": offerLane,
       "Micro-Offer": microOffer,
       "Offer Lane": offerLane,
-      "Access": "VERIFIED BUSINESS INBOX",
-      "Economics": "HIGH",
-      "Need": "HIGH",
-      "Confidence": "HIGH",
+      "Access": "VERIFIED BUSINESS INBOX / " + authority,
+      "Economics": economicsSignal,
+      "Need": pain,
+      "Confidence": confidence,
       "Business Strength Evidence": business,
       "Digital Reality / Gap": gap,
       "Mark Intervention Delta": intervention,
@@ -476,10 +506,10 @@ function materializeQualified_() {
       "Customer Dream Outcome": "Understand the business, trust the proof, and take the next step quickly.",
       "Value Equation Lever": "Increase perceived likelihood and reduce evaluation effort.",
       "Value Gap Gate": "PASS: staged qualification plus owned-site email verification.",
-      "Why Now / Booster": reason,
+      "Why Now / Booster": "TIMING=" + timing + " | INTENT=" + intent + " — " + reason,
       "Next Action": "Send manually in Zoho after review",
       "Market ID": marketId,
-      "Source": "QUEUE MATERIALIZER / OWNED SITE",
+      "Source": "QUEUE MATERIALIZER / OWNED SITE / " + priority,
       "Created": created,
       "Notes": "READY-B. Public inbox independently extracted from " + emailEvidence.url + "."
     };
@@ -494,10 +524,10 @@ function materializeQualified_() {
       "Commercial Relevance": consequence,
       "Why Mark": intervention,
       "Micro-Offer": microOffer,
-      "Signal / Trigger": reason,
+      "Signal / Trigger": "TIMING=" + timing + " | INTENT=" + intent + " — " + reason,
       "Value Gap Hypothesis": gap,
-      "Experiment Tag": "ASYMMETRY-FIRST",
-      "Founder-Minute Priority": "HIGH",
+      "Experiment Tag": "REVENUE-SIGNAL",
+      "Founder-Minute Priority": priority,
       "Draft Message": draft,
       "Mark Approved?": "PENDING",
       "Sent At": "",
@@ -613,9 +643,12 @@ function sentence_(value) {
 
 function findOwnedSiteEmail_(website) {
   const root = normalizeWebsite_(website);
-  if (!root) return { email: "", url: "" };
+  if (!root) return { email: "", url: "", rebuildConflict: false };
   const pages = [root];
   const homepage = fetchPublicHtml_(root);
+  if (hasActiveRebuildSignal_(homepage)) {
+    return { email: "", url: root, rebuildConflict: true };
+  }
   const sameSiteLinks = extractCandidateOwnedLinks_(root, homepage);
   sameSiteLinks.forEach(function (url) {
     if (pages.indexOf(url) === -1 && pages.length < 5) pages.push(url);
@@ -627,10 +660,13 @@ function findOwnedSiteEmail_(website) {
 
   for (let i = 0; i < pages.length; i += 1) {
     const html = i === 0 ? homepage : fetchPublicHtml_(pages[i]);
+    if (hasActiveRebuildSignal_(html)) {
+      return { email: "", url: pages[i], rebuildConflict: true };
+    }
     const email = extractEmail_(html);
-    if (email) return { email: email, url: pages[i] };
+    if (email) return { email: email, url: pages[i], rebuildConflict: false };
   }
-  return { email: "", url: "" };
+  return { email: "", url: "", rebuildConflict: false };
 }
 
 function fetchPublicHtml_(url) {
@@ -652,13 +688,45 @@ function extractEmail_(html) {
   const decoded = String(html || "")
     .replace(/&#64;|&#x40;/gi, "@")
     .replace(/&#46;|&#x2e;/gi, ".");
-  const matches = decoded.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || [];
-  const blocked = /\.(?:png|jpe?g|gif|svg|webp|css|js)$/i;
+  const mailto = decoded.match(/href\s*=\s*["'][^"']*mailto:([^"'?\s>]+)/i);
+  if (mailto) {
+    const safe = safePublicEmail_(mailto[1]);
+    if (safe) return safe;
+  }
+  const visible = decoded
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ");
+  const matches = visible.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || [];
   for (let i = 0; i < matches.length; i += 1) {
-    const email = matches[i].replace(/^mailto:/i, "").toLowerCase();
-    if (!blocked.test(email) && !/example\.(?:com|org|net)$/i.test(email)) return email;
+    const safe = safePublicEmail_(matches[i]);
+    if (safe) return safe;
   }
   return "";
+}
+
+function safePublicEmail_(value) {
+  const email = String(value || "").trim().replace(/^mailto:/i, "").toLowerCase();
+  if (!/^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i.test(email)) return "";
+  if (/\.(?:png|jpe?g|gif|svg|webp|css|js)$/i.test(email)) return "";
+  if (/example\.(?:com|org|net)$/i.test(email)) return "";
+  if (/^(?:no-?reply|do-?not-?reply|postmaster|abuse)@/i.test(email)) return "";
+  return email;
+}
+
+function hasActiveRebuildSignal_(html) {
+  const visible = String(html || "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
+  return /(?:new\s+(?:website|site).{0,50}(?:coming\s+soon|under\s+construction)|(?:website|site).{0,50}(?:coming\s+soon|under\s+construction)|(?:building|launching|developing)\s+(?:our\s+)?new\s+(?:website|site))/i.test(visible);
+}
+
+function qualificationSignal_(reason, key, fallback) {
+  const pattern = new RegExp("(?:^|\\|\\s*)" + key + "\\s*=\\s*([^|—\\n]+)", "i");
+  const match = String(reason || "").match(pattern);
+  return match ? String(match[1] || "").trim().toUpperCase() : fallback;
 }
 
 function extractCandidateOwnedLinks_(root, html) {

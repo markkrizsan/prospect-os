@@ -71,3 +71,8 @@ Apps Script is deployed independently from GitHub. After this Code.gs version pa
 8. Verify that exactly one complete matching OPPORTUNITIES + OUTREACH pair appears, both are `V10 READY`, MARKET changes to `PROMOTE`, and no email is sent.
 
 Do not create multiple materializer triggers. Re-running `installProspectMaterializerTrigger` safely replaces the prior trigger for that handler.
+
+
+### Revenue-signal hardening
+
+The materializer prioritizes P1 before P2, preserves evidence-backed PAIN/TIMING/ECONOMICS/AUTHORITY/SCOPE/INTENT/CONFIDENCE labels, rechecks for an active rebuild before writing contact records, and only extracts an email from an explicit mailto link or human-visible owned-site text. It does not silently upgrade every staged lead to HIGH.

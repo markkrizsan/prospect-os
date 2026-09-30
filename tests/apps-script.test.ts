@@ -234,3 +234,25 @@ test("qualified materializer helpers allocate IDs and generate a human draft", (
   assert.match(draft, /commercial path/i);
   assert.match(draft, /annotated homepage pass/i);
 });
+
+test("materializer parses evidence-backed qualification signals without inventing HIGH scores", () => {
+  const f = fixture();
+  const reason = "PAIN=MEDIUM | TIMING=HIGH | ECONOMICS=HIGH | AUTHORITY=REALISTIC | SCOPE=PASS | INTENT=HIGH | CONFIDENCE=MEDIUM — evidence";
+  assert.equal(f.run("qualificationSignal_", reason, "PAIN", "LOW"), "MEDIUM");
+  assert.equal(f.run("qualificationSignal_", reason, "CONFIDENCE", "LOW"), "MEDIUM");
+  assert.equal(f.run("qualificationSignal_", reason, "MISSING", "NONE"), "NONE");
+});
+
+test("owned-site email extraction ignores hidden vendor code", () => {
+  const f = fixture();
+  assert.equal(f.run("extractEmail_", "<script>const x='vendor@tracker.test'</script><a href='mailto:Sales@Acme.com'>Email us</a>"), "sales@acme.com");
+  assert.equal(f.run("extractEmail_", "<script>const x='vendor@tracker.test'</script><p>Contact: info@acme.com</p>"), "info@acme.com");
+  assert.equal(f.run("extractEmail_", "<script>const x='vendor@tracker.test'</script>"), "");
+  assert.equal(f.run("extractEmail_", "<a href='mailto:noreply@acme.com'>mail</a>"), "");
+});
+
+test("materializer detects explicit website replacement language without confusing construction services", () => {
+  const f = fixture();
+  assert.equal(f.run("hasActiveRebuildSignal_", "<p>Our new website is coming soon.</p>"), true);
+  assert.equal(f.run("hasActiveRebuildSignal_", "<p>Commercial construction and renovation services.</p>"), false);
+});
