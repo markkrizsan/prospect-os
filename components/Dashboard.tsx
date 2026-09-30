@@ -22,7 +22,7 @@ type SnapshotEnvelope = {
 
 function readVerifiedSnapshot(): SnapshotEnvelope | null {
   try {
-    const raw = sessionStorage.getItem(SNAPSHOT_KEY);
+    const raw = localStorage.getItem(SNAPSHOT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<SnapshotEnvelope>;
     if (!parsed.data || !Array.isArray(parsed.data.prospects) || !parsed.data.counts || !parsed.savedAt) return null;
@@ -34,7 +34,7 @@ function readVerifiedSnapshot(): SnapshotEnvelope | null {
 
 function persistVerifiedSnapshot(data: ProspectData): void {
   try {
-    sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data } satisfies SnapshotEnvelope));
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data } satisfies SnapshotEnvelope));
   } catch {
     // The live dashboard must continue even if browser storage is unavailable.
   }
@@ -360,7 +360,7 @@ export default function Dashboard() {
       if (response.status === 401) {
         setLocked(true);
         setData(null);
-        sessionStorage.removeItem(SNAPSHOT_KEY);
+        localStorage.removeItem(SNAPSHOT_KEY);
         throw new Error("Dashboard key required");
       }
 

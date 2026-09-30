@@ -39,3 +39,35 @@ The current V10 PLAYBOOK in the live Sheet includes the /web offer-match law, fi
 ## Retired duplicate view
 
 The former TODAY Sheet remains hidden and preserved for forensic history. The live dashboard derives SEND NOW exclusively from the two canonical operational records; the backend no longer reads, deletes, or renumbers TODAY. If the Apps Script deployment is not updated, it may still attempt old TODAY mutations. A GitHub/Vercel deployment alone does not update the independently deployed Google Apps Script web app.
+
+
+## Simplified queue materializer
+
+Prospect OS now separates research from contact materialization so a scheduled research run cannot be stopped by a contact-write permission boundary.
+
+Flow:
+
+`MARKET QUEUED -> QUALIFIED — MATERIALIZE -> V10 READY -> SENT / REJECTED`
+
+- The ChatGPT Queue Engine only researches and updates non-contact MARKET fields.
+- `runQualifiedMaterializer` runs inside Google Apps Script under the spreadsheet owner's Google authorization.
+- It processes up to five `QUALIFIED — MATERIALIZE` rows per execution.
+- It checks the owned website for a published company email, writes matching OPPORTUNITIES + OUTREACH rows, reads them back, and only then marks MARKET `PROMOTE`.
+- It never sends email.
+- It never guesses an address.
+- A candidate with no owned-site public email stays `QUALIFIED — MATERIALIZE` for later contact resolution.
+
+### One-time production activation
+
+Apps Script is deployed independently from GitHub. After this Code.gs version passes CI:
+
+1. Open the existing Prospect OS Apps Script project attached to the production web app.
+2. Replace Code.gs with the current repository `apps-script/Code.gs`.
+3. Save.
+4. In **Deploy -> Manage deployments**, edit the existing Web app deployment and create a new version. Keep the existing execution/access settings and production URL.
+5. In the Apps Script editor, select `installProspectMaterializerTrigger` and click **Run** once. Approve the requested spreadsheet + external-request permissions.
+6. Open **Triggers** and verify one time-driven trigger exists for `runQualifiedMaterializer`, every 15 minutes.
+7. Run `runQualifiedMaterializer` once manually as a canary only when MARKET has a `QUALIFIED — MATERIALIZE` row.
+8. Verify that exactly one complete matching OPPORTUNITIES + OUTREACH pair appears, both are `V10 READY`, MARKET changes to `PROMOTE`, and no email is sent.
+
+Do not create multiple materializer triggers. Re-running `installProspectMaterializerTrigger` safely replaces the prior trigger for that handler.
