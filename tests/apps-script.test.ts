@@ -56,7 +56,7 @@ const oppHeaders = ["Opportunity ID", "Status", "Company", "Website", "Person", 
   "Micro-Offer", "Offer Lane", "Access", "Economics", "Need", "Confidence", "Business Strength Evidence",
   "Digital Reality / Gap", "Mark Intervention Delta", "Economic Justification", "Customer Dream Outcome",
   "Value Equation Lever", "Value Gap Gate", "Why Now / Booster", "Next Action", "Market ID", "Source", "Created", "Notes"];
-const outHeaders = ["Opportunity ID", "Status", "Company", "Person", "Email / Channel", "Subject Line",
+const outHeaders = ["Opportunity ID", "Status", "Company", "Person", "Email / Channel", "Subject",
   "Observation", "Relevance", "Why Mark Can Help", "Concrete Offer", "Why Now", "Value Gap",
   "Source", "Priority", "Finished Outreach Draft", "Mark Approved?", "Sent At", "Follow-up Due",
   "Reply?", "Reply Date", "Next Move", "Notes"];
@@ -75,7 +75,7 @@ function fixture(opts: { status?: string; sentAt?: string; existingPipeline?: Re
     RUNS: new FakeSheet([["Run ID (UTC)", "READY Persisted", "Primary Blocker"]]),
     OPPORTUNITIES: new FakeSheet([oppHeaders, makeRow(oppHeaders, { "Opportunity ID": id, Status: status, Company: "Desert Cleaning", "Offer Lane": "Web Design + Development" })]),
     OUTREACH: new FakeSheet([outHeaders, makeRow(outHeaders, { "Opportunity ID": id, Status: status, Company: "Desert Cleaning",
-      Person: "Desert Cleaning team", "Email / Channel": "team@example.test", "Subject Line": "Homepage idea",
+      Person: "Desert Cleaning team", "Email / Channel": "team@example.test", Subject: "Homepage idea",
       "Finished Outreach Draft": "Hi team", "Sent At": opts.sentAt ?? "", "Reply?": "NO", "Mark Approved?": "PENDING" })]),
     PIPELINE: new FakeSheet([pipelineHeaders, ...(opts.existingPipeline ? [makeRow(pipelineHeaders, opts.existingPipeline)] : [])]),
     TODAY: new FakeSheet([
@@ -145,6 +145,7 @@ test("MARK_SENT writes through to stages, follow-up, pipeline and removes stale 
   assert.equal(out["Mark Approved?"], "SENT BY MARK");
   assert.equal(out["Follow-up Due"], "2026-10-06");
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "SENT");
+  assert.equal(f.sheets.PIPELINE.record("V10-O038")?.["Message Angle"], "Homepage idea");
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.["Next Action Date"], "2026-10-06");
   assert.equal(f.sheets.TODAY.rows.length, 8);
   assert.equal(f.sheets.TODAY.rows[7][10], "V9-O028");
@@ -187,4 +188,13 @@ test("text-only sent dates preserve calendar day for America/Los_Angeles", () =>
   const f = fixture({ status: "SENT", sentAt: "9/30/2026" });
   f.run("syncSent_");
   assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Follow-up Due"], "2026-10-06");
+});
+
+test("schema mismatch fails before any partial SENT or PIPELINE changes", () => {
+  const f = fixture();
+  f.sheets.OUTREACH.rows[0][5] = "Subject Line"; // Regression against the real Sheet's Subject header
+  assert.throws(() => f.run("markSent_", "V10-O038", "2026-09-30T18:00:00.000Z"), /Missing column: Subject/);
+  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.Status, "V10 READY");
+  assert.equal(f.sheets.OPPORTUNITIES.record("V10-O038")?.Status, "V10 READY");
+  assert.equal(f.sheets.PIPELINE.rows.length, 1);
 });
