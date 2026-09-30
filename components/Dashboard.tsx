@@ -28,12 +28,170 @@ function present(value: string): string {
   return value || "Not recorded";
 }
 
+function isToday(value: string): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+}
+
 function Intelligence({ label, value, tone = "plain" }: { label: string; value: string; tone?: string }) {
   return (
     <section className={`intel intel--${tone}`}>
       <h3>{label}</h3>
       <p>{present(value)}</p>
     </section>
+  );
+}
+
+function SendFocus({
+  item,
+  index,
+  total,
+  busy,
+  onNext,
+  onPrev,
+  onMarkSent,
+  onReject,
+  onNotice,
+}: {
+  item: Prospect;
+  index: number;
+  total: number;
+  busy: boolean;
+  onNext: () => void;
+  onPrev: () => void;
+  onMarkSent: (item: Prospect) => Promise<void>;
+  onReject: (item: Prospect) => Promise<void>;
+  onNotice: (message: string) => void;
+}) {
+  const site = cleanUrl(item.website);
+  const email = [item.subjectLine ? `Subject: ${item.subjectLine}` : "", item.outreachDraft]
+    .filter(Boolean)
+    .join("\n\n");
+  const copyIssues = outreachQualityIssues(item);
+  const copyBlocked = copyIssues.length > 0;
+
+  const copyEmail = useCallback(async () => {
+    if (!email || copyBlocked) return;
+    await navigator.clipboard.writeText(email);
+    onNotice(`${item.company || item.id} email copied`);
+  }, [copyBlocked, email, item.company, item.id, onNotice]);
+
+  useEffect(() => {
+    function keydown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      if (event.key === "ArrowRight") onNext();
+      if (event.key === "ArrowLeft") onPrev();
+      if (event.key.toLowerCase() === "c") void copyEmail();
+      if (event.key.toLowerCase() === "z") window.open("https://mail.zoho.com/", "_blank", "noopener,noreferrer");
+      if (event.key.toLowerCase() === "v" && site) window.open(site, "_blank", "noopener,noreferrer");
+    }
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [copyEmail, onNext, onPrev, site]);
+
+  return (
+    <article className="focus-card">
+      <aside className="focus-index">
+        <span>V10 / READY</span>
+        <strong>{String(index + 1).padStart(2, "0")}</strong>
+        <small>/ {String(total).padStart(2, "0")}</small>
+        <div className="focus-index-rule" />
+        <p>ONE PROSPECT<br />ONE DECISION</p>
+      </aside>
+
+      <section className="focus-main">
+        <header className="focus-company">
+          <div>
+            <span className="micro-label">QUALIFIED OPPORTUNITY</span>
+            <h2>{present(item.company)}</h2>
+            <p>{[item.person, item.role, item.contactPath].filter(Boolean).join(" · ")}</p>
+          </div>
+          <div className="focus-state">● {present(item.status)}</div>
+        </header>
+
+        <div className="focus-thesis">
+          <span className="micro-label">WHY THIS DESERVES A SHOT</span>
+          <div className="thesis-grid">
+            <section>
+              <b>01</b>
+              <h3>REAL BUSINESS</h3>
+              <p>{present(item.businessStrength)}</p>
+            </section>
+            <section>
+              <b>02</b>
+              <h3>REAL GAP</h3>
+              <p>{present(item.commercialGap)}</p>
+            </section>
+            <section className="thesis-red">
+              <b>03</b>
+              <h3>THE MOVE</h3>
+              <p>{present(item.interventionDelta)}</p>
+            </section>
+          </div>
+        </div>
+
+        <div className="focus-evidence">
+          <div>
+            <span>WHY IT COULD PAY</span>
+            <p>{present(item.economicJustification)}</p>
+          </div>
+          <div>
+            <span>WHY NOW</span>
+            <p>{present(item.whyNow)}</p>
+          </div>
+        </div>
+
+        <div className="focus-offer">
+          <span>FIRST USEFUL THING</span>
+          <strong>{present(item.microOffer)}</strong>
+        </div>
+
+        <div className="focus-bottom">
+          <button onClick={onPrev} disabled={total <= 1}>← PREVIOUS</button>
+          <span>{item.id}</span>
+          <button onClick={onNext} disabled={total <= 1}>NEXT →</button>
+        </div>
+      </section>
+
+      <aside className="focus-compose">
+        <div className="compose-top">
+          <span className="micro-label">OUTREACH / READY TO SEND</span>
+          <strong>{present(item.subjectLine)}</strong>
+        </div>
+
+        <div className="compose-draft">{present(item.outreachDraft)}</div>
+
+        {copyBlocked && (
+          <div className="copy-warning">
+            <strong>COPY CHECK</strong>
+            <span>{copyIssues.join(", ")}</span>
+          </div>
+        )}
+
+        <div className="compose-actions">
+          <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY EMAIL <kbd>C</kbd></button>
+          <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO <kbd>Z</kbd></a>
+          {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE <kbd>V</kbd></a> : <button disabled>VIEW SITE</button>}
+          <button className="reject" onClick={() => void onReject(item)} disabled={busy}>REJECT</button>
+          <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy}>
+            {busy ? "VERIFYING…" : "MARK SENT"}
+          </button>
+        </div>
+
+        <div className="keyboard-hint">
+          <span>← →</span> MOVE QUEUE
+          <span>C</span> COPY
+          <span>Z</span> MAIL
+          <span>V</span> SITE
+        </div>
+      </aside>
+    </article>
   );
 }
 
@@ -51,20 +209,12 @@ function ProspectCard({
   onNotice: (message: string) => void;
 }) {
   const site = cleanUrl(item.website);
-  const zoho = "https://mail.zoho.com/";
-  const legacyId = item.id.toLowerCase().startsWith("v9")
-    ? `LEGACY ID · ${item.id}`
-    : item.id
-      ? `ID · ${item.id}`
-      : "";
-  const email = [item.subjectLine ? `Subject: ${item.subjectLine}` : "", item.outreachDraft]
-    .filter(Boolean)
-    .join("\n\n");
+  const email = [item.subjectLine ? `Subject: ${item.subjectLine}` : "", item.outreachDraft].filter(Boolean).join("\n\n");
   const copyIssues = outreachQualityIssues(item);
   const copyBlocked = copyIssues.length > 0;
 
   async function copyEmail() {
-    if (!email) return;
+    if (!email || copyBlocked) return;
     await navigator.clipboard.writeText(email);
     onNotice(`${item.company || item.id} email copied`);
   }
@@ -74,32 +224,17 @@ function ProspectCard({
       <header className="card-head">
         <div className="index">V10</div>
         <div className="card-identity">
-          <span className="eyebrow">QUALIFIED OPPORTUNITY</span>
+          <span className="eyebrow">OPPORTUNITY RECORD</span>
           <h2>{present(item.company)}</h2>
-          <p>
-            {present(item.person)}
-            {item.role ? ` · ${item.role}` : ""}
-            {legacyId ? ` · ${legacyId}` : ""}
-          </p>
+          <p>{[item.person, item.role, item.id].filter(Boolean).join(" · ")}</p>
         </div>
-        <div className="status">
-          <span aria-hidden="true">●</span> {present(item.status)}
-        </div>
+        <div className="status"><span>●</span> {present(item.status)}</div>
       </header>
 
       <div className="contact-strip">
-        <div>
-          <span>WEBSITE</span>
-          <strong>{present(item.website)}</strong>
-        </div>
-        <div>
-          <span>CONTACT PATH</span>
-          <strong>{present(item.contactPath)}</strong>
-        </div>
-        <div>
-          <span>SOURCE</span>
-          <strong>{item.source} · {item.version || "V10"}</strong>
-        </div>
+        <div><span>WEBSITE</span><strong>{present(item.website)}</strong></div>
+        <div><span>CONTACT PATH</span><strong>{present(item.contactPath)}</strong></div>
+        <div><span>SOURCE</span><strong>{item.source} · {item.version || "V10"}</strong></div>
       </div>
 
       <div className="intelligence-grid">
@@ -112,57 +247,23 @@ function ProspectCard({
       </div>
 
       <section className="offer-band">
-        <div>
-          <span>FIRST THING I CAN OFFER</span>
-          <strong>{present(item.microOffer)}</strong>
-        </div>
-        <div>
-          <span>SUBJECT LINE</span>
-          <strong>{present(item.subjectLine)}</strong>
-        </div>
+        <div><span>FIRST THING I CAN OFFER</span><strong>{present(item.microOffer)}</strong></div>
+        <div><span>SUBJECT LINE</span><strong>{present(item.subjectLine)}</strong></div>
       </section>
 
       <section className="draft">
-        <div className="draft-label">
-          <span>OUTREACH</span>
-          <strong>READY TO COPY</strong>
-        </div>
+        <div className="draft-label"><span>OUTREACH</span><strong>READY TO COPY</strong></div>
         <p>{present(item.outreachDraft)}</p>
       </section>
 
-      {copyBlocked && (
-        <div className="copy-warning" role="alert">
-          <strong>COPY CHECK</strong>
-          <span>Rewrite before sending: {copyIssues.join(", ")}</span>
-        </div>
-      )}
+      {copyBlocked && <div className="copy-warning"><strong>COPY CHECK</strong><span>{copyIssues.join(", ")}</span></div>}
 
       <footer className="actions">
-        {site ? (
-          <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a>
-        ) : (
-          <button disabled>VIEW SITE ↗</button>
-        )}
-        <button
-          onClick={() => void copyEmail()}
-          disabled={!email || copyBlocked}
-          title={copyBlocked ? `Fix copy first: ${copyIssues.join(", ")}` : undefined}
-        >
-          COPY EMAIL
-        </button>
-        <a href={zoho} target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
-        <button
-          className="reject"
-          onClick={() => void onReject(item)}
-          disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}
-        >
-          REJECT
-        </button>
-        <button
-          className="mark-sent"
-          onClick={() => void onMarkSent(item)}
-          disabled={busy || Boolean(item.sentAt)}
-        >
+        {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
+        <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY EMAIL</button>
+        <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
+        <button className="reject" onClick={() => void onReject(item)} disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}>REJECT</button>
+        <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy || Boolean(item.sentAt)}>
           {busy ? "VERIFYING…" : item.sentAt ? "SENT ✓" : "MARK SENT"}
         </button>
       </footer>
@@ -174,46 +275,22 @@ function MarketCard({ item }: { item: Prospect }) {
   const site = cleanUrl(item.website);
 
   return (
-    <article className="prospect-card market-card">
-      <header className="card-head">
-        <div className="index">MKT</div>
-        <div className="card-identity">
-          <span className="eyebrow">MARKET INTELLIGENCE</span>
-          <h2>{present(item.company)}</h2>
-          <p>{[item.cityState, item.industry, item.id].filter(Boolean).join(" · ")}</p>
-        </div>
-        <div className="status">
-          <span aria-hidden="true">●</span> {present(item.status)}
-        </div>
-      </header>
-
-      <div className="contact-strip">
-        <div>
-          <span>WEBSITE</span>
-          <strong>{present(item.website)}</strong>
-        </div>
-        <div>
-          <span>SIGNAL STRENGTH</span>
-          <strong>{present(item.signalStrength)}</strong>
-        </div>
-        <div>
-          <span>SOURCE</span>
-          <strong>MARKET</strong>
-        </div>
+    <article className="market-row">
+      <div className="market-number">MKT</div>
+      <div className="market-core">
+        <span className="eyebrow">{[item.cityState, item.industry].filter(Boolean).join(" / ")}</span>
+        <h2>{present(item.company)}</h2>
+        <p>{present(item.businessStrength)}</p>
       </div>
-
-      <div className="intelligence-grid">
-        <Intelligence label="01 / BUSINESS SIGNAL" value={item.businessStrength} tone="strength" />
-        <Intelligence label="02 / DIGITAL SIGNAL" value={item.commercialGap} tone="gap" />
-        <Intelligence label="03 / ECONOMICS" value={item.economicJustification} tone="delta" />
-        <Intelligence label="04 / OFFER LANE" value={item.serviceIdea} />
-        <Intelligence label="05 / SCREENING REASON" value={item.screeningReason} />
-        <Intelligence label="06 / NOTES" value={item.notes} />
+      <div className="market-signal">
+        <span>DIGITAL SIGNAL</span>
+        <p>{present(item.commercialGap)}</p>
       </div>
-
-      <footer className="actions market-actions">
-        {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
-      </footer>
+      <div className="market-state">
+        <strong>{present(item.status)}</strong>
+        <small>{present(item.signalStrength)}</small>
+        {site && <a href={site} target="_blank" rel="noreferrer">OPEN ↗</a>}
+      </div>
     </article>
   );
 }
@@ -228,6 +305,7 @@ export default function Dashboard() {
   const [busyId, setBusyId] = useState("");
   const [locked, setLocked] = useState(false);
   const [dashboardKey, setDashboardKey] = useState("");
+  const [focusIndex, setFocusIndex] = useState(0);
 
   const request = useCallback(async (options?: RequestInit): Promise<ProspectData> => {
     const response = await fetch("/api/prospects", {
@@ -252,7 +330,6 @@ export default function Dashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
-
     try {
       setData(await request());
       setLocked(false);
@@ -264,17 +341,11 @@ export default function Dashboard() {
     }
   }, [request]);
 
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      void load();
-    }, 5 * 60 * 1000);
+    const interval = window.setInterval(() => { void load(); }, 5 * 60 * 1000);
     return () => window.clearInterval(interval);
   }, [load]);
-
   useEffect(() => {
     if (!notice) return;
     const timeout = window.setTimeout(() => setNotice(""), 3000);
@@ -283,25 +354,28 @@ export default function Dashboard() {
 
   const records = useMemo(() => {
     const all = data?.prospects ?? [];
-    const inViewRecords = all.filter((item) => inView(item, view));
+    const filtered = all.filter((item) => inView(item, view));
     const term = query.trim().toLowerCase();
-    return term
-      ? inViewRecords.filter((item) => JSON.stringify(item).toLowerCase().includes(term))
-      : inViewRecords;
+    return term ? filtered.filter((item) => JSON.stringify(item).toLowerCase().includes(term)) : filtered;
   }, [data, query, view]);
+
+  useEffect(() => {
+    if (focusIndex >= records.length) setFocusIndex(Math.max(0, records.length - 1));
+  }, [focusIndex, records.length]);
+
+  const sentToday = useMemo(
+    () => (data?.prospects ?? []).filter((item) => isToday(item.sentAt)).length,
+    [data],
+  );
 
   async function markSent(item: Prospect) {
     if (!window.confirm(`Mark ${item.company || item.id} as sent in the Google Sheet?`)) return;
     setBusyId(item.id);
     setError("");
-
     try {
-      const next = await request({
-        method: "POST",
-        body: JSON.stringify({ action: "MARK_SENT", id: item.id }),
-      });
+      const next = await request({ method: "POST", body: JSON.stringify({ action: "MARK_SENT", id: item.id }) });
       setData(next);
-      setNotice(`${item.company || item.id} confirmed SENT in Google Sheets`);
+      setNotice(`${item.company || item.id} confirmed SENT`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "MARK SENT failed");
     } finally {
@@ -311,21 +385,16 @@ export default function Dashboard() {
 
   async function rejectProspect(item: Prospect) {
     const reason = window.prompt(
-      `Reject ${item.company || item.id}. Enter a concise reason (for example: SCOPE COMPLEXITY, WEAK VALUE GAP, ALREADY SOLVED, NO ACCESS, LOW ECONOMICS).`,
-      "SCOPE COMPLEXITY",
+      `Reject ${item.company || item.id}. Enter the real reason.`,
+      "WEAK VALUE GAP",
     );
-
     if (!reason?.trim()) return;
     setBusyId(item.id);
     setError("");
-
     try {
-      const next = await request({
-        method: "POST",
-        body: JSON.stringify({ action: "REJECT", id: item.id, reason: reason.trim() }),
-      });
+      const next = await request({ method: "POST", body: JSON.stringify({ action: "REJECT", id: item.id, reason: reason.trim() }) });
       setData(next);
-      setNotice(`${item.company || item.id} rejected: ${reason.trim()}`);
+      setNotice(`${item.company || item.id} rejected`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "REJECT failed");
     } finally {
@@ -340,131 +409,101 @@ export default function Dashboard() {
   }
 
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
+  const readyCount = data?.counts["send-now"] ?? 0;
 
   return (
     <>
       {locked && (
         <div className="lock">
           <form onSubmit={unlock}>
-            <span>PROSPECT OS / V10</span>
-            <h1>PRIVATE<br />COMMAND</h1>
+            <span>PROSPECT OS / PRIVATE</span>
+            <h1>ENTER<br />SYSTEM</h1>
             <label htmlFor="dashboard-key">Dashboard key</label>
-            <input
-              id="dashboard-key"
-              type="password"
-              value={dashboardKey}
-              onChange={(event) => setDashboardKey(event.target.value)}
-              autoFocus
-            />
+            <input id="dashboard-key" type="password" value={dashboardKey} onChange={(event) => setDashboardKey(event.target.value)} autoFocus />
             <button>ENTER</button>
           </form>
         </div>
       )}
 
-      <header className="masthead">
-        <div className="brand">
-          <span>PROSPECT OS</span>
-          <b>10</b>
+      <header className="command-head">
+        <div className="command-brand">
+          <span>PROSPECT<br />OS</span>
+          <strong>10</strong>
         </div>
-
-        <div className="edition">
-          <span>CONVERSATION ENGINE / V10</span>
-          <strong>GOOGLE SHEETS<br />LIVE SYSTEM</strong>
+        <div className="command-title">
+          <span>CONVERSATION ENGINE / LIVE</span>
+          <h1>{view === "send-now" ? <>SEND <em>NOW</em></> : activeView}</h1>
         </div>
-
-        <div className="masthead-title">
-          <span className="masthead-kicker">OUTBOUND / OPERATING SYSTEM</span>
-          <h1>SEND<br /><em>NOW</em></h1>
-          <div className="signal-rule" aria-hidden="true"><i /></div>
-        </div>
-
-        <div className="masthead-meta">
-          <span>READY / NOW</span>
-          <strong>{String(data?.counts["send-now"] ?? 0).padStart(2, "0")}</strong>
-          <small>V10 VERIFIED<br />FOR ACTION</small>
+        <div className="command-metrics">
+          <div><span>READY</span><strong>{String(readyCount).padStart(2, "0")}</strong><small>/ 15 BUFFER</small></div>
+          <div><span>SENT TODAY</span><strong>{String(sentToday).padStart(2, "0")}</strong><small>/ 05 HR TARGET</small></div>
         </div>
       </header>
 
       <nav className="view-nav" aria-label="Prospect views">
         {VIEWS.map((item) => (
-          <button
-            key={item.id}
-            className={view === item.id ? "active" : ""}
-            onClick={() => setView(item.id)}
-          >
-            <span>{item.label}</span>
-            <sup>{data?.counts[item.id] ?? 0}</sup>
+          <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => { setView(item.id); setFocusIndex(0); }}>
+            {item.label}<sup>{data?.counts[item.id] ?? 0}</sup>
           </button>
         ))}
         <label>
           <span className="sr-only">Search prospects</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="SEARCH /"
-          />
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SEARCH /" />
         </label>
-        <button className="refresh" onClick={() => void load()} disabled={loading}>
-          {loading ? "SYNCING…" : "REFRESH ↻"}
-        </button>
+        <button className="refresh" onClick={() => void load()} disabled={loading}>{loading ? "SYNCING…" : "REFRESH ↻"}</button>
       </nav>
 
-      <main>
-        <div className="queue-head">
-          <div>
-            <span>ACTIVE VIEW / LIVE QUEUE</span>
-            <h2>{activeView}</h2>
-          </div>
-          <div>
-            <span>RECORDS</span>
-            <strong>{String(records.length).padStart(2, "0")}</strong>
-          </div>
-          <div>
-            <span>LAST SYNC</span>
-            <strong>
-              {data?.syncedAt
-                ? new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                : "—"}
-            </strong>
-          </div>
-        </div>
+      <main className={view === "send-now" ? "main-focus" : ""}>
+        {error && <div className="error" role="alert"><strong>SYSTEM</strong><span>{error}</span></div>}
 
-        {error && (
-          <div className="error" role="alert">
-            <strong>SHEET CONNECTION</strong>
-            <span>{error}</span>
-          </div>
+        {view === "send-now" && !loading && !error && records.length > 0 && (
+          <SendFocus
+            item={records[focusIndex]}
+            index={focusIndex}
+            total={records.length}
+            busy={busyId === records[focusIndex].id}
+            onNext={() => setFocusIndex((current) => (current + 1) % records.length)}
+            onPrev={() => setFocusIndex((current) => (current - 1 + records.length) % records.length)}
+            onMarkSent={markSent}
+            onReject={rejectProspect}
+            onNotice={setNotice}
+          />
         )}
 
-        {!loading && !error && records.length === 0 && (
-          <section className="empty">
+        {view === "send-now" && !loading && !error && records.length === 0 && (
+          <section className="empty-focus">
             <span>00</span>
-            <h2>NO RECORDS<br />IN THIS VIEW</h2>
-            <p>Synchronized from the Google Sheet. Nothing has been copied into another database.</p>
+            <h2>QUEUE<br />EMPTY</h2>
+            <p>The engine is synchronized. No prospect currently passes the send gate.</p>
           </section>
         )}
 
-        <div className="prospect-list">
-          {records.map((item) =>
-            item.source.toLowerCase() === "market" ? (
-              <MarketCard key={item.id || `${item.company}-market`} item={item} />
-            ) : (
-              <ProspectCard
-                key={item.id || `${item.company}-${item.person}`}
-                item={item}
-                busy={busyId === item.id}
-                onMarkSent={markSent}
-                onReject={rejectProspect}
-                onNotice={setNotice}
-              />
-            ),
-          )}
-        </div>
+        {view !== "send-now" && (
+          <>
+            <div className="queue-head">
+              <div><span>LIVE VIEW</span><h2>{activeView}</h2></div>
+              <div><span>RECORDS</span><strong>{String(records.length).padStart(2, "0")}</strong></div>
+              <div><span>LAST SYNC</span><strong>{data?.syncedAt ? new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</strong></div>
+            </div>
+
+            {!loading && !error && records.length === 0 && (
+              <section className="empty"><span>00</span><h2>NO RECORDS<br />IN THIS VIEW</h2></section>
+            )}
+
+            <div className="prospect-list">
+              {records.map((item) =>
+                item.source.toLowerCase() === "market"
+                  ? <MarketCard key={item.id || `${item.company}-market`} item={item} />
+                  : <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} />
+              )}
+            </div>
+          </>
+        )}
       </main>
 
       <footer className="system-footer">
-        <span>SINGLE SOURCE OF TRUTH → GOOGLE SHEETS</span>
+        <span>GOOGLE SHEETS / SINGLE SOURCE OF TRUTH</span>
+        <span>← → NAVIGATE / C COPY / Z MAIL / V SITE</span>
         <span>V10 / EXECUTION INTERFACE</span>
       </footer>
 
