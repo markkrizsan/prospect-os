@@ -73,7 +73,7 @@ export async function fetchAppsScriptReadResponse(
   fetcher: typeof fetch = fetch,
   pause: (milliseconds: number) => Promise<void> = (milliseconds) =>
     new Promise((resolve) => setTimeout(resolve, milliseconds)),
-  attempts = 3,
+  attempts = 2,
 ): Promise<Response> {
   if ((init.method ?? "GET").toUpperCase() !== "GET") {
     throw new Error("Read retry transport accepts GET only; mutations must never be replayed.");
@@ -83,7 +83,7 @@ export async function fetchAppsScriptReadResponse(
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const attemptInit: RequestInit = {
       ...init,
-      signal: init.signal ?? AbortSignal.timeout(15_000),
+      signal: init.signal ?? AbortSignal.timeout(8_000),
     };
     try {
       const response = await fetchAppsScriptResponse(target, attemptInit, fetcher, pause);
@@ -93,7 +93,7 @@ export async function fetchAppsScriptReadResponse(
       lastError = error;
       if (!retryableReadError(error) || attempt === attempts - 1) throw error;
     }
-    await pause(attempt === 0 ? 350 : 900);
+    await pause(250);
   }
   if (lastResponse) return lastResponse;
   throw lastError instanceof Error ? lastError : new Error("Apps Script read failed after retries.");

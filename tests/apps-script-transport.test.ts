@@ -115,8 +115,8 @@ test("a plain JSON response needs no redirect or retry", async () => {
   assert.deepEqual(await result.json(), { ok: true, data: { MARKET: [] } });
 });
 
-test("read-only transport retries transient original GET failures but never a permanent 404", async () => {
-  const statuses = [503, 502, 200];
+test("read-only transport retries one transient original GET failure but never a permanent 404", async () => {
+  const statuses = [503, 200];
   const calls: string[] = [];
   const sleeps: number[] = [];
   const fetcher: typeof fetch = async (_url, init) => {
@@ -131,8 +131,8 @@ test("read-only transport retries transient original GET failures but never a pe
     async (ms) => { sleeps.push(ms); },
   );
   assert.equal(result.status, 200);
-  assert.deepEqual(calls, ["GET", "GET", "GET"]);
-  assert.deepEqual(sleeps, [350, 900]);
+  assert.deepEqual(calls, ["GET", "GET"]);
+  assert.deepEqual(sleeps, [250]);
 
   const permanentCalls: string[] = [];
   const permanent404: typeof fetch = async (_url, init) => {

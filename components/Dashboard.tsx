@@ -15,6 +15,33 @@ const VIEWS: Array<{ id: ProspectView; label: string }> = [
   { id: "all", label: "ALL" },
 ];
 
+const SNAPSHOT_KEY = "prospect-os-v10:last-verified";
+
+type SnapshotEnvelope = {
+  savedAt: string;
+  data: ProspectData;
+};
+
+function readVerifiedSnapshot(): SnapshotEnvelope | null {
+  try {
+    const raw = sessionStorage.getItem(SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SnapshotEnvelope>;
+    if (!parsed.data || !Array.isArray(parsed.data.prospects) || !parsed.data.counts || !parsed.savedAt) return null;
+    return parsed as SnapshotEnvelope;
+  } catch {
+    return null;
+  }
+}
+
+function persistVerifiedSnapshot(data: ProspectData): void {
+  try {
+    sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ savedAt: new Date().toISOString(), data } satisfies SnapshotEnvelope));
+  } catch {
+    // The live dashboard must continue even if browser storage is unavailable.
+  }
+}
+
 function cleanUrl(value: string): string | null {
   if (!value) return null;
   try {
@@ -309,11 +336,18 @@ export default function Dashboard() {
   const [dashboardKey, setDashboardKey] = useState("");
   const [focusIndex, setFocusIndex] = useState(0);
   const [reconciling, setReconciling] = useState(false);
+  const [stale, setStale] = useState(false);
   const syncInFlight = useRef(false);
+
+  const acceptVerifiedData = useCallback((next: ProspectData) => {
+    setData(next);
+    persistVerifiedSnapshot(next);
+    setStale(false);
+  }, []);
 
   const request = useCallback(async (options?: RequestInit): Promise<ProspectData> => {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 20_000);
+    const timeout = window.setTimeout(() => controller.abort(), 18_000);
     try {
       const response = await fetch("/api/prospects", {
         ...options,
@@ -327,6 +361,8 @@ export default function Dashboard() {
 
       if (response.status === 401) {
         setLocked(true);
+        setData(null);
+        sessionStorage.removeItem(SNAPSHOT_KEY);
         throw new Error("Dashboard key required");
       }
 
@@ -335,7 +371,7 @@ export default function Dashboard() {
       return body as ProspectData;
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") {
-        throw new Error("Dashboard sync timed out; last verified data remains visible.");
+        throw new Error("Live Sheet sync timed out.");
       }
       throw cause;
     } finally {
@@ -350,20 +386,34 @@ export default function Dashboard() {
     else setRefreshing(true);
     try {
       const next = await request();
-      setData(next);
+      acceptVerifiedData(next);
       setLocked(false);
       setError("");
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Sheet sync failed";
-      if (message !== "Dashboard key required") setError(message);
+      if (message !== "Dashboard key required") {
+        setError(message);
+        setStale(true);
+      }
     } finally {
       syncInFlight.current = false;
       if (initial) setLoading(false);
       setRefreshing(false);
     }
-  }, [request]);
+  }, [acceptVerifiedData, request]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    const hasKey = Boolean(sessionStorage.getItem("prospect-os-key"));
+    const cached = hasKey ? readVerifiedSnapshot() : null;
+    if (cached) {
+      setData(cached.data);
+      setStale(true);
+      setLoading(false);
+      void load(false);
+      return;
+    }
+    void load(true);
+  }, [load]);
   useEffect(() => {
     const refreshIfVisible = () => {
       if (document.visibilityState === "visible") void load(false);
@@ -405,7 +455,7 @@ export default function Dashboard() {
     setError("");
     try {
       const next = await request({ method: "POST", body: JSON.stringify({ action: "MARK_SENT", id: item.id }) });
-      setData(next);
+      acceptVerifiedData(next);
       setNotice(`${item.company || item.id} confirmed SENT`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "MARK SENT failed");
@@ -424,7 +474,7 @@ export default function Dashboard() {
     setError("");
     try {
       const next = await request({ method: "POST", body: JSON.stringify({ action: "REJECT", id: item.id, reason: reason.trim() }) });
-      setData(next);
+      acceptVerifiedData(next);
       setNotice(`${item.company || item.id} rejected`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "REJECT failed");
@@ -439,7 +489,7 @@ export default function Dashboard() {
     setError("");
     try {
       const next = await request({ method: "POST", body: JSON.stringify({ action: "SYNC_SENT" }) });
-      setData(next);
+      acceptVerifiedData(next);
       setNotice("SENT follow-ups and PIPELINE records reconciled");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "SENT reconciliation failed");
@@ -451,13 +501,22 @@ export default function Dashboard() {
   async function unlock(event: React.FormEvent) {
     event.preventDefault();
     sessionStorage.setItem("prospect-os-key", dashboardKey);
-    await load(true);
+    const cached = readVerifiedSnapshot();
+    if (cached) {
+      setData(cached.data);
+      setStale(true);
+      setLoading(false);
+    }
+    await load(!cached);
   }
 
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
   const readyCount = data?.counts["send-now"] ?? 0;
   const run = data?.latestRun;
   const runState = classifyRunHealth(run ?? null, data?.syncedAt ?? new Date().toISOString(), readyCount);
+  const lastVerified = data?.syncedAt
+    ? new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : "";
 
   return (
     <>
@@ -518,7 +577,7 @@ export default function Dashboard() {
               Review the matching IDs in OPPORTUNITIES and OUTREACH before preparing new outreach.</span>
           </div>
         )}
-        {error && <div className="error" role="alert"><strong>{data ? "SYNC WARNING" : "SYSTEM"}</strong><span>{error}</span></div>}
+        {error && <div className="error" role="alert"><strong>{data ? "SYNC DEGRADED" : "SYSTEM"}</strong><span>{error}{data && stale && lastVerified ? ` Showing last verified state from ${lastVerified}.` : ""}</span></div>}
 
         {view === "send-now" && !loading && data && records.length > 0 && (
           <SendFocus
@@ -568,7 +627,7 @@ export default function Dashboard() {
       <footer className="system-footer">
         <span>GOOGLE SHEETS / SINGLE SOURCE OF TRUTH</span>
         <span>← → NAVIGATE / C COPY ALL / Z MAIL / V SITE</span>
-        <span>{refreshing ? "SYNCING LIVE DATA…" : data?.syncedAt ? `SYNCED ${new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "NOT YET SYNCED"}</span>
+        <span>{refreshing ? "SYNCING LIVE DATA…" : stale && lastVerified ? `CACHED · LAST VERIFIED ${lastVerified}` : lastVerified ? `SYNCED ${lastVerified}` : "NOT YET SYNCED"}</span>
       </footer>
 
       <div className="sr-only" aria-live="polite">{notice}</div>
