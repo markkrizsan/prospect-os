@@ -4,7 +4,7 @@ The React/Next.js frontend deploys through Vercel. **Google Apps Script is a sep
 
 ## Production behavior
 
-- GET /exec?action=list returns MARKET, OUTREACH and OPPORTUNITIES, preserving every dashboard view.
+- GET /exec?action=list returns MARKET, OUTREACH, OPPORTUNITIES and RUNS, preserving dashboard views and displaying the latest real hourly production metrics. Create the RUNS tab first using the existing canonical Google Sheet schema.
 - MARK_SENT (manual, explicitly confirmed) updates both source statuses; preserves an existing Sent At, sets Mark Approved? to SENT BY MARK, assigns a follow-up four business days after the actual send unless a reply exists, idempotently upserts PIPELINE, and removes matching already-sent cards from TODAY.
 - REJECT blocks prior SENT records, updates both statuses and removes obsolete TODAY rows.
 - SYNC_SENT is the new explicit dashboard button. It backfills the *already recorded* SENT records into PIPELINE/follow-up/TODAY without creating new sends, new recipients or new READY records. It preserves a later pipeline stage such as REPLIED, proposal or deposit.
@@ -31,3 +31,7 @@ No Apps Script action emails anyone or sources new prospects. Automatic hourly c
 ## Regression tests
 
 `npm test` includes Apps Script behavior tests with a fake in-memory spreadsheet: source tabs returned, MARK_SENT write-through, repeat idempotency, existing SENT repair without losing a real reply, and sent-record rejection protection. Run alongside `npm run typecheck` and `npm run build` through GitHub Actions.
+
+## Source / metrics policy
+
+The current V10 PLAYBOOK in the live Sheet includes the /web offer-match law, five persisted-new-READY-per-hour acceptance target, and TRIAGE's 149-row provisional legacy audit index. RUNS A:S is the separate non-contact production ledger. TRIAGE is never a source of READY prospects until current-site, business, channel, and full outreach are verified and both OPPORTUNITIES + OUTREACH rows are independently read back.
