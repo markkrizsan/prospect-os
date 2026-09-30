@@ -1,5 +1,5 @@
 import { isAuthorized, unauthorized } from "@/lib/auth";
-import { diagnoseProspectPayload, markProspectSent, readProspects } from "@/lib/prospectApi";
+import { diagnoseProspectPayload, markProspectSent, readProspects, rejectProspect } from "@/lib/prospectApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,11 +24,17 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!isAuthorized(request)) return unauthorized();
   try {
-    const body = await request.json() as { action?: unknown; id?: unknown };
-    if (body.action !== "MARK_SENT" || typeof body.id !== "string" || !body.id.trim()) {
-      return Response.json({ error: "A valid MARK_SENT action and record ID are required" }, { status: 400 });
+    const body = await request.json() as { action?: unknown; id?: unknown; reason?: unknown };
+    if (typeof body.id !== "string" || !body.id.trim()) {
+      return Response.json({ error: "A valid record ID is required" }, { status: 400 });
     }
-    return Response.json(await markProspectSent(body.id.trim()), { headers: { "Cache-Control": "private, no-store" } });
+    if (body.action === "MARK_SENT") {
+      return Response.json(await markProspectSent(body.id.trim()), { headers: { "Cache-Control": "private, no-store" } });
+    }
+    if (body.action === "REJECT" && typeof body.reason === "string" && body.reason.trim()) {
+      return Response.json(await rejectProspect(body.id.trim(), body.reason.trim()), { headers: { "Cache-Control": "private, no-store" } });
+    }
+    return Response.json({ error: "A valid MARK_SENT or REJECT action is required" }, { status: 400 });
   } catch (error) {
     return failure(error);
   }

@@ -67,18 +67,46 @@ export async function diagnoseProspectPayload(): Promise<unknown> {
   return describeShape(await readRawProspects());
 }
 
-export async function markProspectSent(id: string): Promise<ProspectData> {
-  const { target, secret } = endpoint("markSent");
+async function mutateProspect(action: "MARK_SENT" | "REJECT", id: string, reason = ""): Promise<ProspectData> {
+  const endpointAction = action === "MARK_SENT" ? "markSent" : "reject";
+  const { target, secret } = endpoint(endpointAction);
   const response = await fetch(target, {
     method: "POST",
     cache: "no-store",
     redirect: "follow",
     headers: { ...secretHeaders(secret), "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ secret, token: secret, key: secret, apiKey: secret, action: "MARK_SENT", opportunityId: id, id, status: "SENT", sentAt: new Date().toISOString() }),
+    body: JSON.stringify({
+      secret,
+      token: secret,
+      key: secret,
+      apiKey: secret,
+      action,
+      opportunityId: id,
+      id,
+      status: action === "MARK_SENT" ? "SENT" : "REJECTED",
+      sentAt: action === "MARK_SENT" ? new Date().toISOString() : undefined,
+      reason: reason || undefined,
+    }),
   });
   await parseResponse(response, secret);
+
   const data = await readProspects();
   const updated = data.prospects.find((item) => item.id === id);
-  if (!updated || !inView(updated, "sent")) throw new Error("The Apps Script response completed, but the Sheet record was not confirmed as SENT");
+  if (!updated) throw new Error("The Apps Script response completed, but the Sheet record could not be re-read");
+
+  if (action === "MARK_SENT" && !inView(updated, "sent")) {
+    throw new Error("The Apps Script response completed, but the Sheet record was not confirmed as SENT");
+  }
+  if (action === "REJECT" && updated.status.trim().toLowerCase() !== "rejected") {
+    throw new Error("The Apps Script response completed, but the Sheet record was not confirmed as REJECTED");
+  }
   return data;
+}
+
+export async function markProspectSent(id: string): Promise<ProspectData> {
+  return mutateProspect("MARK_SENT", id);
+}
+
+export async function rejectProspect(id: string, reason: string): Promise<ProspectData> {
+  return mutateProspect("REJECT", id, reason);
 }

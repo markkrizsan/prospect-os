@@ -27,14 +27,16 @@ function Intelligence({ label, value, tone = "plain" }: { label: string; value: 
   return <section className={`intel intel--${tone}`}><h3>{label}</h3><p>{present(value)}</p></section>;
 }
 
-function ProspectCard({ item, busy, onMarkSent, onNotice }: {
+function ProspectCard({ item, busy, onMarkSent, onReject, onNotice }: {
   item: Prospect;
   busy: boolean;
   onMarkSent: (item: Prospect) => Promise<void>;
+  onReject: (item: Prospect) => Promise<void>;
   onNotice: (message: string) => void;
 }) {
   const site = cleanUrl(item.website);
-  const zoho = cleanUrl(item.zohoUrl) ?? "https://crm.zoho.com/crm/";
+  const zoho = "https://mail.zoho.com/";
+  const legacyId = item.id.toLowerCase().startsWith("v9") ? `LEGACY ID · ${item.id}` : item.id ? `ID · ${item.id}` : "";
   const email = [item.subjectLine ? `Subject: ${item.subjectLine}` : "", item.outreachDraft].filter(Boolean).join("\n\n");
 
   async function copyEmail() {
@@ -46,10 +48,10 @@ function ProspectCard({ item, busy, onMarkSent, onNotice }: {
   return (
     <article className="prospect-card">
       <header className="card-head">
-        <div className="index">{item.id || "V10"}</div>
+        <div className="index">V10</div>
         <div>
           <h2>{present(item.company)}</h2>
-          <p>{present(item.person)}{item.role ? ` · ${item.role}` : ""}</p>
+          <p>{present(item.person)}{item.role ? ` · ${item.role}` : ""}{legacyId ? ` · ${legacyId}` : ""}</p>
         </div>
         <div className="status"><span>●</span> {present(item.status)}</div>
       </header>
@@ -83,6 +85,9 @@ function ProspectCard({ item, busy, onMarkSent, onNotice }: {
         {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
         <button onClick={() => void copyEmail()} disabled={!email}>COPY EMAIL</button>
         <a href={zoho} target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
+        <button className="reject" onClick={() => void onReject(item)} disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}>
+          REJECT
+        </button>
         <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy || Boolean(item.sentAt)}>
           {busy ? "VERIFYING…" : item.sentAt ? "SENT ✓" : "MARK SENT"}
         </button>
@@ -160,6 +165,22 @@ export default function Dashboard() {
     finally { setBusyId(""); }
   }
 
+  async function rejectProspect(item: Prospect) {
+    const reason = window.prompt(
+      `Reject ${item.company || item.id}. Enter a concise reason (for example: SCOPE COMPLEXITY, WEAK VALUE GAP, ALREADY SOLVED, NO ACCESS, LOW ECONOMICS).`,
+      "SCOPE COMPLEXITY",
+    );
+    if (!reason?.trim()) return;
+    setBusyId(item.id);
+    setError("");
+    try {
+      const next = await request({ method: "POST", body: JSON.stringify({ action: "REJECT", id: item.id, reason: reason.trim() }) });
+      setData(next);
+      setNotice(`${item.company || item.id} rejected: ${reason.trim()}`);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "REJECT failed"); }
+    finally { setBusyId(""); }
+  }
+
   async function unlock(event: React.FormEvent) {
     event.preventDefault();
     sessionStorage.setItem("prospect-os-key", dashboardKey);
@@ -186,7 +207,7 @@ export default function Dashboard() {
         <div className="queue-head"><div><span>ACTIVE VIEW</span><h2>{VIEWS.find((item) => item.id === view)?.label}</h2></div><div><span>RECORDS</span><strong>{String(records.length).padStart(2, "0")}</strong></div><div><span>LAST SYNC</span><strong>{data?.syncedAt ? new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</strong></div></div>
         {error && <div className="error" role="alert"><strong>SHEET CONNECTION</strong><span>{error}</span></div>}
         {!loading && !error && records.length === 0 && <section className="empty"><span>00</span><h2>NO RECORDS<br />IN THIS VIEW</h2><p>Synchronized from the Google Sheet. Nothing has been copied into another database.</p></section>}
-        <div className="prospect-list">{records.map((item) => <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onNotice={setNotice} />)}</div>
+        <div className="prospect-list">{records.map((item) => <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} />)}</div>
       </main>
       <footer className="system-footer"><span>SINGLE SOURCE OF TRUTH → GOOGLE SHEETS</span><span>V10 / EXECUTION INTERFACE</span></footer>
       <div className="sr-only" aria-live="polite">{notice}</div>
