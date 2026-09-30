@@ -76,17 +76,108 @@ function prospect(record: UnknownRecord, source: string): Prospect {
   };
 }
 
-function merge(items: Prospect[]): Prospect[] {
-  const result = new Map<string, Prospect>();
-  items.forEach((item, index) => {
-    const key = item.id || `${item.company}|${item.person}` || `row-${index}`;
-    const current = result.get(key);
-    if (!current) return void result.set(key, item);
-    const next = { ...current };
-    for (const field of Object.keys(item) as Array<keyof Prospect>) if (item[field]) next[field] = item[field];
-    result.set(key, next);
+const READY_STATES = new Set(["ready", "ready to send", "v10 ready"]);
+
+function isReadyState(value: string): boolean {
+  return READY_STATES.has(normalizeKey(value));
+}
+
+/**
+ * OUTREACH owns lifecycle, delivery channel, subject, draft, and sent timestamp.
+ * OPPORTUNITIES owns commercial research and service-fit facts.
+ * MARKET stays a separate research view and never overrides either source.
+ * Conflicting or duplicate operational rows are visible but NEVER SEND NOW.
+ */
+function joinOperational(
+  input: Array<{ source: string; record: UnknownRecord }>,
+): { prospects: Prospect[]; issues: string[] } {
+  const groups = new Map<string, { opportunity: Prospect[]; outreach: Prospect[] }>();
+  const issues: string[] = [];
+  const market: Prospect[] = [];
+
+  input.forEach(({ source, record }) => {
+    const item = prospect(record, source);
+    if (!item.id) {
+      if (Object.values(record).some((value) => String(value ?? "").trim())) {
+        issues.push(source.toUpperCase() + ": operational row missing a durable ID");
+      }
+      return;
+    }
+    const tab = source.toUpperCase();
+    if (tab === "MARKET") {
+      market.push(item);
+      return;
+    }
+    const group = groups.get(item.id) ?? { opportunity: [], outreach: [] };
+    if (tab === "OUTREACH") group.outreach.push(item);
+    else group.opportunity.push(item);
+    groups.set(item.id, group);
   });
-  return [...result.values()];
+
+  const operational: Prospect[] = [];
+  groups.forEach((group, id) => {
+    const opportunity = group.opportunity[0];
+    const outreach = group.outreach[0];
+    const entryIssues: string[] = [];
+    if (group.opportunity.length > 1) entryIssues.push("duplicate OPPORTUNITIES ID");
+    if (group.outreach.length > 1) entryIssues.push("duplicate OUTREACH ID");
+    if (!opportunity) entryIssues.push("missing OPPORTUNITIES row");
+    if (!outreach) entryIssues.push("missing OUTREACH row");
+
+    const combined: Prospect = {
+      ...(opportunity ?? outreach)!,
+      source: outreach ? "OUTREACH" : "OPPORTUNITIES",
+      id,
+      company: opportunity?.company || outreach?.company || "",
+      person: outreach?.person || opportunity?.person || "",
+      contactPath: outreach?.contactPath || "",
+      subjectLine: outreach?.subjectLine || "",
+      outreachDraft: outreach?.outreachDraft || "",
+      sentAt: outreach?.sentAt || "",
+      repliedAt: outreach?.repliedAt || "",
+      notes: [opportunity?.notes, outreach?.notes].filter(Boolean).join("\n"),
+    };
+    const opState = normalizeKey(opportunity?.status || "");
+    const outState = normalizeKey(outreach?.status || "");
+    if (opportunity && outreach && opState !== outState &&
+        !(isReadyState(opportunity.status) && isReadyState(outreach.status))) {
+      entryIssues.push("OPPORTUNITIES/OUTREACH status disagreement");
+    }
+    if (opportunity?.company && outreach?.company &&
+        normalizeKey(opportunity.company) !== normalizeKey(outreach.company)) {
+      entryIssues.push("company name disagreement");
+    }
+    const states = [opState, outState];
+    if (states.some((state) => state === "sent") || combined.sentAt) combined.status = "SENT";
+    else if (states.some((state) => state === "rejected")) combined.status = "REJECTED";
+    else if (states.some((state) => state.includes("hold"))) combined.status = "V10 HOLD";
+    else if (states.some((state) => state.includes("re audit"))) combined.status = "V10 RE-AUDIT";
+    else combined.status = outreach?.status || opportunity?.status || "";
+    if (combined.status === "SENT" && !combined.sentAt) entryIssues.push("SENT without timestamp");
+
+    const wantsReady = Boolean(
+      (opportunity && isReadyState(opportunity.status)) ||
+      (outreach && isReadyState(outreach.status)),
+    );
+    const readyGate = Boolean(
+      opportunity && outreach && group.opportunity.length === 1 && group.outreach.length === 1 &&
+      isV10(combined) &&
+      isReadyState(opportunity.status) && isReadyState(outreach.status) &&
+      !combined.sentAt && extractRecipientEmail(combined.contactPath) &&
+      combined.company && opportunity.website && combined.subjectLine.trim() &&
+      combined.outreachDraft.trim() && combined.businessStrength &&
+      combined.commercialGap && combined.interventionDelta &&
+      combined.economicJustification && combined.microOffer &&
+      outreachQualityIssues(combined).length === 0 &&
+      entryIssues.length === 0
+    );
+    combined.readyValidated = readyGate;
+    if (wantsReady && !readyGate) entryIssues.push("READY claim fails joined-record validation");
+    combined.stateIssues = entryIssues;
+    entryIssues.forEach((issue) => issues.push(id + ": " + issue));
+    operational.push(combined);
+  });
+  return { prospects: [...market, ...operational], issues };
 }
 
 export function isV10(item: Prospect): boolean {
@@ -146,7 +237,7 @@ export function outreachCopyIssues(item: Pick<Prospect, "contactPath" | "subject
 
 export function inView(item: Prospect, view: ProspectView): boolean {
   const status = normalizeKey(item.status);
-  if (view === "send-now") return isV10(item) && ["outreach", "opportunities"].includes(item.source.toLowerCase()) && ["ready", "ready to send", "v10 ready"].includes(status) && !item.sentAt;
+  if (view === "send-now") return item.readyValidated === true && !item.sentAt;
   if (view === "market") return item.source.toLowerCase() === "market";
   if (view === "research") return status.includes("research");
   if (view === "hold") return status.includes("hold");
@@ -188,12 +279,13 @@ function latestRun(payload: unknown): RunMetrics | null {
 }
 
 export function normalizePayload(payload: unknown, syncedAt = new Date().toISOString()): ProspectData {
-  const prospects = merge(collect(payload).map(({ source, record }) => prospect(record, source)));
+  const { prospects, issues: consistencyIssues } = joinOperational(collect(payload));
   const views: ProspectView[] = ["send-now", "market", "research", "hold", "sent", "replied", "all"];
   return {
     latestRun: latestRun(payload),
     syncedAt,
     prospects,
+    consistencyIssues,
     counts: Object.fromEntries(views.map((view) => [view, prospects.filter((item) => inView(item, view)).length])) as Record<ProspectView, number>,
   };
 }
