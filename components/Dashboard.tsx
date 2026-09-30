@@ -306,6 +306,7 @@ export default function Dashboard() {
   const [locked, setLocked] = useState(false);
   const [dashboardKey, setDashboardKey] = useState("");
   const [focusIndex, setFocusIndex] = useState(0);
+  const [reconciling, setReconciling] = useState(false);
 
   const request = useCallback(async (options?: RequestInit): Promise<ProspectData> => {
     const response = await fetch("/api/prospects", {
@@ -402,6 +403,21 @@ export default function Dashboard() {
     }
   }
 
+  async function reconcileSent() {
+    if (!window.confirm("Reconcile existing SENT records across PIPELINE, TODAY, and follow-ups? This does not send emails.")) return;
+    setReconciling(true);
+    setError("");
+    try {
+      const next = await request({ method: "POST", body: JSON.stringify({ action: "SYNC_SENT" }) });
+      setData(next);
+      setNotice("Recorded SENT state reconciled across the Sheet");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "SENT reconciliation failed");
+    } finally {
+      setReconciling(false);
+    }
+  }
+
   async function unlock(event: React.FormEvent) {
     event.preventDefault();
     sessionStorage.setItem("prospect-os-key", dashboardKey);
@@ -410,6 +426,8 @@ export default function Dashboard() {
 
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
   const readyCount = data?.counts["send-now"] ?? 0;
+  const run = data?.latestRun;
+  const runState = !run ? "AWAITING FIRST RUN" : (run.readyStart !== null && run.readyStart >= 10) ? "BUFFER HEALTHY" : run.persistence.toUpperCase().includes("BLOCKED") ? "PERSISTENCE BLOCKED" : (run.readyAdded ?? 0) >= 5 ? "TARGET MET" : "SHORT OF TARGET";
 
   return (
     <>
@@ -450,8 +468,17 @@ export default function Dashboard() {
           <span className="sr-only">Search prospects</span>
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SEARCH /" />
         </label>
-        <button className="refresh" onClick={() => void load()} disabled={loading}>{loading ? "SYNCING…" : "REFRESH ↻"}</button>
+        <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || loading}>{reconciling ? "RECONCILING…" : "RECONCILE SENT ↻"}</button>
+        <button className="refresh" onClick={() => void load()} disabled={loading || reconciling}>{loading ? "SYNCING…" : "REFRESH ↻"}</button>
       </nav>
+
+      <section className="run-strip" aria-label="Last hourly production run">
+        <div><span>LAST RUN</span><strong>{run?.localTime || "NOT YET RECORDED"}</strong></div>
+        <div><span>VERIFIED NEW READY / 05</span><strong>{run?.readyAdded ?? "—"} / 05</strong></div>
+        <div><span>SCREENED / DEEP AUDITS</span><strong>{run ? `${run.screened ?? "—"} / ${run.audited ?? "—"}` : "— / —"}</strong></div>
+        <div><span>ACCEPTANCE</span><strong>{runState}</strong></div>
+        <div className="run-blocker"><span>BOTTLENECK</span><strong>{run?.blocker || "Awaiting RUNS readback"}</strong></div>
+      </section>
 
       <main className={view === "send-now" ? "main-focus" : ""}>
         {error && <div className="error" role="alert"><strong>SYSTEM</strong><span>{error}</span></div>}
@@ -474,7 +501,7 @@ export default function Dashboard() {
           <section className="empty-focus">
             <span>00</span>
             <h2>QUEUE<br />EMPTY</h2>
-            <p>The engine is synchronized. No prospect currently passes the send gate.</p>
+            <p>No unsent READY record is currently available. Replenishment is the hourly production priority; review the last run for sourcing or persistence blockers.</p>
           </section>
         )}
 

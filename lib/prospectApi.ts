@@ -110,3 +110,18 @@ export async function markProspectSent(id: string): Promise<ProspectData> {
 export async function rejectProspect(id: string, reason: string): Promise<ProspectData> {
   return mutateProspect("REJECT", id, reason);
 }
+
+/** Reconcile only previously SENT Sheet records. Does not send, approve or create outreach. */
+export async function reconcileSentProspects(): Promise<ProspectData> {
+  const { target, secret } = endpoint("syncSent");
+  const response = await fetch(target, {
+    method: "POST", cache: "no-store", redirect: "follow",
+    headers: { ...secretHeaders(secret), "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ secret, token: secret, key: secret, apiKey: secret, action: "SYNC_SENT" }),
+  });
+  const result = await parseResponse(response, secret) as { ok?: boolean; unmatched?: number; missingTimestamps?: number };
+  if ((result.unmatched ?? 0) > 0 || (result.missingTimestamps ?? 0) > 0) {
+    throw new Error("Partial reconciliation: some recorded SENT rows have missing corresponding opportunities or timestamps. Inspect OUTREACH and PIPELINE.");
+  }
+  return readProspects();
+}

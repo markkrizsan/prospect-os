@@ -1,5 +1,5 @@
 import { isAuthorized, unauthorized } from "@/lib/auth";
-import { diagnoseProspectPayload, markProspectSent, readProspects, rejectProspect } from "@/lib/prospectApi";
+import { diagnoseProspectPayload, markProspectSent, readProspects, reconcileSentProspects, rejectProspect } from "@/lib/prospectApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,9 @@ export async function POST(request: Request) {
   if (!isAuthorized(request)) return unauthorized();
   try {
     const body = await request.json() as { action?: unknown; id?: unknown; reason?: unknown };
+    if (body.action === "SYNC_SENT") {
+      return Response.json(await reconcileSentProspects(), { headers: { "Cache-Control": "private, no-store" } });
+    }
     if (typeof body.id !== "string" || !body.id.trim()) {
       return Response.json({ error: "A valid record ID is required" }, { status: 400 });
     }
@@ -34,7 +37,7 @@ export async function POST(request: Request) {
     if (body.action === "REJECT" && typeof body.reason === "string" && body.reason.trim()) {
       return Response.json(await rejectProspect(body.id.trim(), body.reason.trim()), { headers: { "Cache-Control": "private, no-store" } });
     }
-    return Response.json({ error: "A valid MARK_SENT or REJECT action is required" }, { status: 400 });
+    return Response.json({ error: "A valid MARK_SENT, REJECT or SYNC_SENT action is required" }, { status: 400 });
   } catch (error) {
     return failure(error);
   }

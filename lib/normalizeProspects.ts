@@ -1,4 +1,4 @@
-import type { Prospect, ProspectData, ProspectView } from "@/lib/types";
+import type { Prospect, ProspectData, ProspectView, RunMetrics } from "@/lib/types";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -155,10 +155,43 @@ export function inView(item: Prospect, view: ProspectView): boolean {
   return true;
 }
 
+function runNumber(value: string): number | null {
+  if (!value.trim()) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** RUNS is an acceptance ledger, not a source of prospects. Missing metrics never imply zero. */
+function latestRun(payload: unknown): RunMetrics | null {
+  const root = payload && typeof payload === "object" ? payload as UnknownRecord : {};
+  const data = root.data && typeof root.data === "object" ? root.data as UnknownRecord : root;
+  const pair = Object.entries(data).find(([key]) => normalizeKey(key) === "runs");
+  const records = asRecords(pair?.[1]).filter((record) => pick(record, "Run ID (UTC)"));
+  const last = records.at(-1);
+  if (!last) return null;
+  const n = (key: string) => runNumber(pick(last, key));
+  return {
+    id: pick(last, "Run ID (UTC)"),
+    localTime: pick(last, "Local Run Time"),
+    mode: pick(last, "Mode"),
+    readyStart: n("READY Start"),
+    screened: n("Cheap Screened"),
+    audited: n("Deep Audited"),
+    passed: n("Substantive PASS"),
+    contactsVerified: n("Contacts Verified"),
+    readyAdded: n("READY Persisted"),
+    readyEnd: n("READY End"),
+    gap: n("Gap To Five"),
+    blocker: pick(last, "Primary Blocker"),
+    persistence: pick(last, "Persistence + Evidence"),
+  };
+}
+
 export function normalizePayload(payload: unknown, syncedAt = new Date().toISOString()): ProspectData {
   const prospects = merge(collect(payload).map(({ source, record }) => prospect(record, source)));
   const views: ProspectView[] = ["send-now", "market", "research", "hold", "sent", "replied", "all"];
   return {
+    latestRun: latestRun(payload),
     syncedAt,
     prospects,
     counts: Object.fromEntries(views.map((view) => [view, prospects.filter((item) => inView(item, view)).length])) as Record<ProspectView, number>,
