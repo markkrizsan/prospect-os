@@ -29,6 +29,10 @@ function doPost(e) {
 
     // Reconciles only records already recorded as SENT; it NEVER sends email or approves a draft.
     if (action === "SYNC_SENT") return withLock_(function () { return syncSent_(); });
+    // Materializes only candidates already qualified in MARKET. It never discovers or qualifies.
+    if (action === "MATERIALIZE_QUALIFIED") {
+      return json_(withLock_(function () { return materializeQualified_(); }));
+    }
 
     const id = String(body.opportunityId || body.id || "").trim();
     if (!id) return json_({ ok: false, error: "Missing opportunity ID" });
@@ -357,4 +361,342 @@ function safeMessage_(error) {
 
 function json_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+/**
+ * Second-stage materializer for the simplified funnel.
+ * Research automation may only mark MARKET rows QUALIFIED — MATERIALIZE after a
+ * bounded evidence pass. This Sheet-owned worker independently finds a public
+ * email on the owned website, creates the canonical READY pair, verifies it,
+ * then marks MARKET PROMOTE. No email is ever sent here.
+ */
+function runQualifiedMaterializer() {
+  return withLock_(function () { return materializeQualified_(); });
+}
+
+function installProspectMaterializerTrigger() {
+  const handler = "runQualifiedMaterializer";
+  ScriptApp.getProjectTriggers().forEach(function (trigger) {
+    if (trigger.getHandlerFunction() === handler) ScriptApp.deleteTrigger(trigger);
+  });
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(15).create();
+  return { ok: true, handler: handler, cadenceMinutes: 15 };
+}
+
+function materializeQualified_() {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const market = requiredSheet_(spreadsheet, "MARKET");
+  const opportunities = requiredSheet_(spreadsheet, "OPPORTUNITIES");
+  const outreach = requiredSheet_(spreadsheet, "OUTREACH");
+  const marketHeaders = headerMap_(market);
+  const oppHeaders = headerMap_(opportunities);
+  const outHeaders = headerMap_(outreach);
+  const values = market.getDataRange().getDisplayValues();
+  const screenColumn = requiredColumn_(marketHeaders, "Screen") - 1;
+  const idColumn = requiredColumn_(marketHeaders, "Market ID") - 1;
+  const companyColumn = requiredColumn_(marketHeaders, "Company / Person") - 1;
+  const websiteColumn = requiredColumn_(marketHeaders, "Website") - 1;
+  const businessColumn = requiredColumn_(marketHeaders, "Business Signal") - 1;
+  const digitalColumn = requiredColumn_(marketHeaders, "Digital Signal") - 1;
+  const economicsColumn = requiredColumn_(marketHeaders, "Economics Proxy") - 1;
+  const offerColumn = requiredColumn_(marketHeaders, "Offer Lane") - 1;
+  const reasonColumn = requiredColumn_(marketHeaders, "Reason") - 1;
+  const checkedColumn = requiredColumn_(marketHeaders, "Last Checked") - 1;
+  const stats = { ok: true, checked: 0, materialized: 0, noOwnedEmail: 0, alreadyMaterialized: 0, failures: [] };
+  const limit = 5;
+
+  for (let index = 1; index < values.length && stats.checked < limit; index += 1) {
+    const row = values[index];
+    if (String(row[screenColumn] || "").trim().toUpperCase() !== "QUALIFIED — MATERIALIZE") continue;
+    stats.checked += 1;
+    const marketId = String(row[idColumn] || "").trim();
+    const company = String(row[companyColumn] || "").trim();
+    const website = String(row[websiteColumn] || "").trim();
+    if (!marketId || !company || !website) {
+      stats.failures.push(marketId || ("row " + (index + 1)) + ": missing market ID/company/website");
+      continue;
+    }
+
+    const existingOpportunityId = opportunityIdForMarket_(opportunities, marketId);
+    if (existingOpportunityId) {
+      setByHeader_(market, index + 1, marketHeaders, "Screen", "PROMOTE");
+      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Existing operational record " + existingOpportunityId + " confirmed during materialization.");
+      stats.alreadyMaterialized += 1;
+      continue;
+    }
+
+    const emailEvidence = findOwnedSiteEmail_(website);
+    if (!emailEvidence.email) {
+      stats.noOwnedEmail += 1;
+      setByHeader_(market, index + 1, marketHeaders, "Last Checked", todayInSheet_(spreadsheet));
+      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materializer found no public email on the owned pages checked; remains queued for contact resolution.");
+      continue;
+    }
+
+    const business = String(row[businessColumn] || "").trim();
+    const gap = String(row[digitalColumn] || "").trim();
+    const economics = String(row[economicsColumn] || "").trim();
+    const offerLane = String(row[offerColumn] || "").trim() || "Web Design + Development";
+    const reason = String(row[reasonColumn] || "").trim();
+    const opportunityId = nextOpportunityId_(opportunities);
+    const person = company + " team";
+    const role = "Company team";
+    const microOffer = "One annotated homepage pass focused on the verified buyer-facing gap.";
+    const intervention = "Clarify the strongest buyer-facing gap, surface the most credible proof earlier, and simplify the next step without replacing working operational systems.";
+    const consequence = "A prospective buyer has to work harder than necessary to understand the business, trust the proof, or take the next step.";
+    const subject = subjectForCompany_(company);
+    const draft = draftForQualified_(company, gap, business, microOffer);
+    const created = todayInSheet_(spreadsheet);
+    const contactPath = emailEvidence.email + " — official company inbox published on owned website";
+
+    const oppData = {
+      "Opportunity ID": opportunityId,
+      "Status": "V10 READY",
+      "Company": company,
+      "Website": website,
+      "Person": person,
+      "Role": role,
+      "Contact Path": contactPath,
+      "Business (FACT)": business,
+      "Situation (FACT)": gap,
+      "Consequence (INFERENCE)": consequence,
+      "UNKNOWN": "Named decision maker not established; using a first-party company inbox published on the owned website.",
+      "Service Idea": offerLane,
+      "Micro-Offer": microOffer,
+      "Offer Lane": offerLane,
+      "Access": "VERIFIED BUSINESS INBOX",
+      "Economics": "HIGH",
+      "Need": "HIGH",
+      "Confidence": "HIGH",
+      "Business Strength Evidence": business,
+      "Digital Reality / Gap": gap,
+      "Mark Intervention Delta": intervention,
+      "Economic Justification": economics,
+      "Customer Dream Outcome": "Understand the business, trust the proof, and take the next step quickly.",
+      "Value Equation Lever": "Increase perceived likelihood and reduce evaluation effort.",
+      "Value Gap Gate": "PASS: staged qualification plus owned-site email verification.",
+      "Why Now / Booster": reason,
+      "Next Action": "Send manually in Zoho after review",
+      "Market ID": marketId,
+      "Source": "QUEUE MATERIALIZER / OWNED SITE",
+      "Created": created,
+      "Notes": "READY-B. Public inbox independently extracted from " + emailEvidence.url + "."
+    };
+    const outData = {
+      "Opportunity ID": opportunityId,
+      "Status": "V10 READY",
+      "Company": company,
+      "Person": person,
+      "Email / Channel": emailEvidence.email,
+      "Subject": subject,
+      "Observation": gap,
+      "Commercial Relevance": consequence,
+      "Why Mark": intervention,
+      "Micro-Offer": microOffer,
+      "Signal / Trigger": reason,
+      "Value Gap Hypothesis": gap,
+      "Experiment Tag": "ASYMMETRY-FIRST",
+      "Founder-Minute Priority": "HIGH",
+      "Draft Message": draft,
+      "Mark Approved?": "PENDING",
+      "Sent At": "",
+      "Follow-up Due": "",
+      "Reply?": "NO",
+      "Reply Type": "",
+      "Next Move": "Send manually in Zoho after review",
+      "Notes": "READY-B. Public inbox independently extracted from " + emailEvidence.url + "."
+    };
+
+    let oppRow = 0;
+    let outRow = 0;
+    try {
+      oppRow = appendObjectRow_(opportunities, oppHeaders, oppData);
+      outRow = appendObjectRow_(outreach, outHeaders, outData);
+      SpreadsheetApp.flush();
+      const verifiedOpportunity = requiredRecord_(spreadsheet, "OPPORTUNITIES", opportunityId);
+      const verifiedOutreach = requiredRecord_(spreadsheet, "OUTREACH", opportunityId);
+      if (getByHeader_(verifiedOpportunity, "Status") !== "V10 READY" ||
+          getByHeader_(verifiedOutreach, "Status") !== "V10 READY" ||
+          getByHeader_(verifiedOutreach, "Email / Channel") !== emailEvidence.email ||
+          !getByHeader_(verifiedOutreach, "Subject") ||
+          !getByHeader_(verifiedOutreach, "Draft Message")) {
+        throw new Error("READY readback mismatch");
+      }
+      setByHeader_(market, index + 1, marketHeaders, "Screen", "PROMOTE");
+      setByHeader_(market, index + 1, marketHeaders, "Last Checked", created);
+      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materialized as " + opportunityId + " after owned-site email readback.");
+      stats.materialized += 1;
+    } catch (error) {
+      // Keep a qualified candidate retryable; remove any partial pair created by this attempt.
+      if (outRow && outRow === outreach.getLastRow()) outreach.deleteRow(outRow);
+      if (oppRow && oppRow === opportunities.getLastRow()) opportunities.deleteRow(oppRow);
+      stats.failures.push(marketId + ": " + safeMessage_(error));
+    }
+  }
+  SpreadsheetApp.flush();
+  return stats;
+}
+
+function appendObjectRow_(sheet, headers, data) {
+  const lastColumn = sheet.getLastColumn();
+  const headerValues = sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0];
+  const row = headerValues.map(function (header) {
+    const key = String(header || "").trim();
+    return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : "";
+  });
+  sheet.appendRow(row);
+  return sheet.getLastRow();
+}
+
+function opportunityIdForMarket_(sheet, marketId) {
+  const headers = headerMap_(sheet);
+  const marketColumn = requiredColumn_(headers, "Market ID");
+  const idColumn = requiredColumn_(headers, "Opportunity ID");
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return "";
+  const values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getDisplayValues();
+  for (let i = 0; i < values.length; i += 1) {
+    if (String(values[i][marketColumn - 1] || "").trim() === marketId) {
+      return String(values[i][idColumn - 1] || "").trim();
+    }
+  }
+  return "";
+}
+
+function nextOpportunityId_(sheet) {
+  const headers = headerMap_(sheet);
+  const idColumn = requiredColumn_(headers, "Opportunity ID");
+  const lastRow = sheet.getLastRow();
+  let max = 0;
+  if (lastRow >= 2) {
+    const values = sheet.getRange(2, idColumn, lastRow - 1, 1).getDisplayValues();
+    values.forEach(function (row) {
+      const match = String(row[0] || "").match(/^V10-O(\d+)$/i);
+      if (match) max = Math.max(max, Number(match[1]));
+    });
+  }
+  return "V10-O" + ("000" + (max + 1)).slice(-3);
+}
+
+function todayInSheet_(spreadsheet) {
+  return Utilities.formatDate(new Date(), spreadsheet.getSpreadsheetTimeZone() || "America/Los_Angeles", "yyyy-MM-dd");
+}
+
+function subjectForCompany_(company) {
+  const clean = String(company || "your company").trim();
+  return clean.match(/s$/i) ? "A few things on " + clean + "' site" : "A few things on " + clean + "'s site";
+}
+
+function draftForQualified_(company, gap, business, microOffer) {
+  const safeCompany = String(company || "").trim();
+  const observation = sentence_(gap);
+  const proof = sentence_(business);
+  return [
+    "Hi " + safeCompany + " team,",
+    "",
+    "I was looking through the site and noticed " + observation,
+    "",
+    proof ? "The business itself looks stronger than that first impression suggests: " + proof : "The business looks stronger than that first impression suggests.",
+    "",
+    "If useful, I can send " + String(microOffer || "an annotated homepage pass showing what I'd tighten").replace(/^[Oo]ne /, "one ").replace(/\.$/, "") + ".",
+    "",
+    "Mark"
+  ].join("\n");
+}
+
+function sentence_(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return /[.!?]$/.test(text) ? text : text + ".";
+}
+
+function findOwnedSiteEmail_(website) {
+  const root = normalizeWebsite_(website);
+  if (!root) return { email: "", url: "" };
+  const pages = [root];
+  const homepage = fetchPublicHtml_(root);
+  const sameSiteLinks = extractCandidateOwnedLinks_(root, homepage);
+  sameSiteLinks.forEach(function (url) {
+    if (pages.indexOf(url) === -1 && pages.length < 5) pages.push(url);
+  });
+  ["/contact", "/contact-us", "/about", "/about-us"].forEach(function (path) {
+    const candidate = origin_(root) + path;
+    if (pages.indexOf(candidate) === -1 && pages.length < 5) pages.push(candidate);
+  });
+
+  for (let i = 0; i < pages.length; i += 1) {
+    const html = i === 0 ? homepage : fetchPublicHtml_(pages[i]);
+    const email = extractEmail_(html);
+    if (email) return { email: email, url: pages[i] };
+  }
+  return { email: "", url: "" };
+}
+
+function fetchPublicHtml_(url) {
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+      validateHttpsCertificates: true,
+      headers: { "User-Agent": "Mozilla/5.0 ProspectOS/10.0" }
+    });
+    const status = response.getResponseCode();
+    return status >= 200 && status < 400 ? String(response.getContentText() || "") : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+function extractEmail_(html) {
+  const decoded = String(html || "")
+    .replace(/&#64;|&#x40;/gi, "@")
+    .replace(/&#46;|&#x2e;/gi, ".");
+  const matches = decoded.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig) || [];
+  const blocked = /\.(?:png|jpe?g|gif|svg|webp|css|js)$/i;
+  for (let i = 0; i < matches.length; i += 1) {
+    const email = matches[i].replace(/^mailto:/i, "").toLowerCase();
+    if (!blocked.test(email) && !/example\.(?:com|org|net)$/i.test(email)) return email;
+  }
+  return "";
+}
+
+function extractCandidateOwnedLinks_(root, html) {
+  const links = [];
+  const host = host_(root);
+  const regex = /href\s*=\s*["']([^"'#]+)["']/ig;
+  let match;
+  while ((match = regex.exec(String(html || "")))) {
+    const href = String(match[1] || "").trim();
+    if (!/(contact|about|team|company)/i.test(href)) continue;
+    const absolute = absoluteOwnedUrl_(root, href);
+    if (absolute && host_(absolute) === host && links.indexOf(absolute) === -1) links.push(absolute);
+    if (links.length >= 4) break;
+  }
+  return links;
+}
+
+function normalizeWebsite_(value) {
+  let url = String(value || "").trim();
+  if (!url) return "";
+  if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+  return url.replace(/\/$/, "");
+}
+
+function origin_(url) {
+  const match = String(url || "").match(/^(https?:\/\/[^/]+)/i);
+  return match ? match[1] : "";
+}
+
+function host_(url) {
+  const match = String(url || "").match(/^https?:\/\/([^/:?#]+)/i);
+  return match ? match[1].toLowerCase().replace(/^www\./, "") : "";
+}
+
+function absoluteOwnedUrl_(root, href) {
+  if (/^https?:\/\//i.test(href)) return href.replace(/\/$/, "");
+  const base = origin_(root);
+  if (!base) return "";
+  if (href.charAt(0) === "/") return base + href.replace(/\/$/, "");
+  return base + "/" + href.replace(/^\.\//, "").replace(/\/$/, "");
 }

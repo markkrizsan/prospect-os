@@ -215,3 +215,22 @@ test("suppressed SENT record receives no new follow-up date", () => {
   assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Follow-up Due"], "");
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "SUPPRESSED");
 });
+
+
+test("qualified materializer helpers allocate IDs and generate a human draft", () => {
+  const f = fixture();
+  const next = f.run("nextOpportunityId_", f.sheets.OPPORTUNITIES) as unknown as string;
+  assert.equal(next, "V10-O039");
+  const subject = f.run("subjectForCompany_", "Bullseye Cleaning") as unknown as string;
+  assert.match(subject, /Bullseye Cleaning/);
+  const draft = f.run(
+    "draftForQualified_",
+    "Bullseye Cleaning",
+    "The commercial path is mixed with unrelated services",
+    "The company serves substantial facilities",
+    "One annotated homepage pass focused on the verified buyer-facing gap.",
+  ) as unknown as string;
+  assert.match(draft, /^Hi Bullseye Cleaning team,/);
+  assert.match(draft, /commercial path/i);
+  assert.match(draft, /annotated homepage pass/i);
+});
