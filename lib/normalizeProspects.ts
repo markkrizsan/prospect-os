@@ -325,7 +325,7 @@ export function normalizePayload(payload: unknown, syncedAt = new Date().toISOSt
     syncedAt,
     prospects,
     consistencyIssues,
-    capabilities: Array.isArray(root.capabilities) ? root.capabilities.map((value) => text(value)).filter(Boolean) : [],
+    capabilities: Array.isArray(root.capabilities) ? root.capabilities.map((value) => String(value ?? "").trim()).filter(Boolean) : [],
     counts: Object.fromEntries(views.map((view) => [view, prospects.filter((item) => inView(item, view)).length])) as Record<ProspectView, number>,
   };
 }
