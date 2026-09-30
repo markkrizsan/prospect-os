@@ -185,7 +185,7 @@ function upsertPipeline_(spreadsheet, opportunity, outreach, stamp, due, replied
   }
   if (isNew) {
     setIfBlank_(existing, "Outcome / Learning", "Sent recorded by Mark; no reply or commercial outcome inferred.");
-    setIfBlank_(existing, "Source", "V10 / USER SEND");
+    setIfBlank_(existing, "Source", getByHeader_(outreach, "Experiment Tag") || "V10 / USER SEND");
     setIfBlank_(existing, "Message Angle", getByHeader_(outreach, "Subject"));
   }
 }
@@ -539,7 +539,11 @@ function materializeQualified_() {
     const intervention = "Clarify the strongest buyer-facing gap, surface the most credible proof earlier, and simplify the next step without replacing working operational systems.";
     const consequence = "A prospective buyer has to work harder than necessary to understand the business, trust the proof, or take the next step.";
     const subject = subjectForCompany_(company);
-    const draft = draftForQualified_(company, gap, business, microOffer);
+    const experimentArm = assignExperimentArm_(outreach, priority, opportunityId);
+    const experimentTag = "REVENUE-SIGNAL | E01-" + experimentArm + " / " + (experimentArm === "A" ? "EVIDENCE-LED" : "DIALOGUE-FIRST");
+    const draft = experimentArm === "A"
+      ? draftForQualified_(company, gap, business, microOffer)
+      : dialogueDraftForQualified_(company, gap, reason);
     const created = todayInSheet_(spreadsheet);
     const contactPath = emailEvidence.email + " — official company inbox published on owned website";
 
@@ -589,7 +593,7 @@ function materializeQualified_() {
       "Micro-Offer": microOffer,
       "Signal / Trigger": "TIMING=" + timing + " | INTENT=" + intent + " — " + reason,
       "Value Gap Hypothesis": gap,
-      "Experiment Tag": "REVENUE-SIGNAL",
+      "Experiment Tag": experimentTag,
       "Founder-Minute Priority": priority,
       "Draft Message": draft,
       "Mark Approved?": "PENDING",
@@ -702,6 +706,55 @@ function sentence_(value) {
   const text = String(value || "").trim();
   if (!text) return "";
   return /[.!?]$/.test(text) ? text : text + ".";
+}
+
+function assignExperimentArm_(outreachSheet, priority, opportunityId) {
+  const headers = headerMap_(outreachSheet);
+  const tagColumn = requiredColumn_(headers, "Experiment Tag") - 1;
+  const priorityColumn = requiredColumn_(headers, "Founder-Minute Priority") - 1;
+  const targetPriority = String(priority || "").trim().toUpperCase() || "P2";
+  let a = 0;
+  let b = 0;
+
+  if (outreachSheet.getLastRow() >= 2) {
+    const values = outreachSheet.getRange(2, 1, outreachSheet.getLastRow() - 1, outreachSheet.getLastColumn()).getDisplayValues();
+    values.forEach(function (row) {
+      if (String(row[priorityColumn] || "").trim().toUpperCase() !== targetPriority) return;
+      const tag = String(row[tagColumn] || "").toUpperCase();
+      if (tag.indexOf("E01-A") !== -1) a += 1;
+      if (tag.indexOf("E01-B") !== -1) b += 1;
+    });
+  }
+  if (a < b) return "A";
+  if (b < a) return "B";
+
+  // Deterministic tie-breaker keeps retries sticky before the row is persisted.
+  const digits = String(opportunityId || "").match(/(\d+)$/);
+  return digits && Number(digits[1]) % 2 === 0 ? "A" : "B";
+}
+
+function dialogueDraftForQualified_(company, gap, reason) {
+  const safeCompany = String(company || "").trim();
+  const context = (String(gap || "") + " " + String(reason || "")).toLowerCase();
+  let question = "Are you already planning to improve the website?";
+
+  if (/(expansion|new location|new facility|opened|opening)/i.test(context)) {
+    question = "Are you already updating the site around the recent expansion?";
+  } else if (/(project|portfolio|case stud|finished work|representative work)/i.test(context)) {
+    question = "Are you planning to bring more project proof forward on the site?";
+  } else if (/(capabil|equipment|quality|rfq|procure|tolerance|inspection)/i.test(context)) {
+    question = "Are you planning to strengthen the capability proof on the site?";
+  } else if (/(service|commercial|residential|buyer path|estimate path|journey)/i.test(context)) {
+    question = "Are you planning to simplify the service paths on the site?";
+  }
+
+  return [
+    "Hi " + safeCompany + " team,",
+    "",
+    question,
+    "",
+    "Mark"
+  ].join("\n");
 }
 
 function findOwnedSiteEmail_(website) {

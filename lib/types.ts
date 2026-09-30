@@ -19,6 +19,7 @@ export interface Prospect {
   microOffer: string;
   subjectLine: string;
   outreachDraft: string;
+  experimentTag: string;
   zohoUrl: string;
   sentAt: string;
   repliedAt: string;

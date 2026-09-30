@@ -20,6 +20,7 @@ function outreach(id = "V10-O100", overrides: Record<string, string> = {}) {
     "Opportunity ID": id, Status: "V10 READY", Company: "Acme Co", "Person": "Acme team",
     "Email / Channel": "team@acme.test — company inbox published on owned site",
     Subject: "A project-page idea",
+    "Experiment Tag": "REVENUE-SIGNAL | E01-B / DIALOGUE-FIRST",
     "Draft Message": "Hi Acme team,\n\nI noticed your project examples are buried. A simpler homepage could show the actual work sooner.\n\nMark",
     ...overrides,
   };
@@ -216,4 +217,9 @@ test("capabilities are opt-in so UI actions wait for the live backend deployment
   assert.deepEqual(legacy.capabilities, []);
   const current = normalizePayload({ OUTREACH: [], OPPORTUNITIES: [], capabilities: ["RECORD_OUTCOME"] });
   assert.deepEqual(current.capabilities, ["RECORD_OUTCOME"]);
+});
+
+test("OUTREACH experiment assignment survives normalization and joined-record rendering", () => {
+  const data = normal();
+  assert.equal(data.prospects[0].experimentTag, "REVENUE-SIGNAL | E01-B / DIALOGUE-FIRST");
 });

@@ -283,3 +283,26 @@ test("RECORD_OUTCOME refuses unsent records", () => {
   const f = fixture();
   assert.throws(() => f.run("recordOutcome_", "V10-O038", "REPLIED", "", ""), /only be recorded after SENT/);
 });
+
+test("E01 experiment assignment balances within priority and remains deterministic on ties", () => {
+  const f = fixture();
+  // Fixture has no E01 history. V10-O039 is odd, so the deterministic tie goes to B.
+  assert.equal(f.run("assignExperimentArm_", f.sheets.OUTREACH, "P2", "V10-O039"), "B");
+  f.sheets.OUTREACH.rows[1][outHeaders.indexOf("Experiment Tag")] = "REVENUE-SIGNAL | E01-B / DIALOGUE-FIRST";
+  f.sheets.OUTREACH.rows[1][outHeaders.indexOf("Founder-Minute Priority")] = "P2";
+  assert.equal(f.run("assignExperimentArm_", f.sheets.OUTREACH, "P2", "V10-O040"), "A");
+});
+
+test("dialogue-first variant is short, research-directed and ends as a human question", () => {
+  const f = fixture();
+  const draft = f.run(
+    "dialogueDraftForQualified_",
+    "Acme Manufacturing",
+    "Procurement buyers have little equipment and quality proof before RFQ",
+    "PAIN=HIGH | TIMING=NONE | SCOPE=PASS",
+  ) as unknown as string;
+  assert.match(draft, /^Hi Acme Manufacturing team,/);
+  assert.match(draft, /capability proof/i);
+  assert.match(draft, /\?\n\nMark$/);
+  assert.ok(draft.split(/\s+/).length < 25);
+});

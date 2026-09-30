@@ -54,6 +54,10 @@ function present(value: string): string {
   return value || "Not recorded";
 }
 
+function experimentBadge(value: string): string {
+  return value.match(/\bE01-[AB]\s*\/\s*[^|]+/i)?.[0]?.toUpperCase() ?? "";
+}
+
 function isToday(value: string): boolean {
   if (!value) return false;
   const date = new Date(value);
@@ -187,6 +191,7 @@ function SendFocus({
       <aside className="focus-compose">
         <div className="compose-top">
           <span className="micro-label">OUTREACH / READY TO SEND</span>
+          {experimentBadge(item.experimentTag) && <span className="micro-label">{experimentBadge(item.experimentTag)}</span>}
           <strong>{present(item.subjectLine)}</strong>
           <p className="compose-recipient">TO / {recipient || "RECIPIENT EMAIL MISSING"}</p>
         </div>
@@ -262,7 +267,7 @@ function ProspectCard({
       <div className="contact-strip">
         <div><span>WEBSITE</span><strong>{present(item.website)}</strong></div>
         <div><span>CONTACT PATH</span><strong>{present(item.contactPath)}</strong></div>
-        <div><span>SOURCE</span><strong>{item.source} · {item.version || "V10"}</strong></div>
+        <div><span>SOURCE</span><strong>{item.source} · {item.version || "V10"}{experimentBadge(item.experimentTag) ? ` · ${experimentBadge(item.experimentTag)}` : ""}</strong></div>
       </div>
 
       <div className="intelligence-grid">

@@ -34,3 +34,20 @@ SEND NOW, QUEUE, REJECTED, SENT, REPLIED. Internal mechanics do not become opera
 ## Change control
 Observe -> reproduce -> test -> canary -> CI -> deploy -> verify live -> promote.
 Never turn one run's failure into a persistent cross-run latch.
+
+
+## Outreach experiment E01
+
+E01 tests one variable only: first-message strategy.
+
+- A = EVIDENCE-LED: current researched 50–100 word outreach.
+- B = DIALOGUE-FIRST: a short, research-informed question designed to start a purposeful reply.
+- Subject-line methodology, sender, qualification gates, recipient verification, timing and follow-up policy remain unchanged.
+- Assignment is sticky and approximately 50/50 within Founder-Minute Priority strata.
+- Experiment Tag is the canonical arm record and is carried into PIPELINE Source when SENT.
+- Primary outcome: positive reply / sent.
+- Downstream outcomes: meetings / sent, proposals / sent, wins / sent, revenue / 100 sends.
+- Guardrails: negative replies, opt-outs, bounces and deliverability issues.
+- First 4+4 sends are a safety canary only. Do not select a winner from the initial eight.
+- Review directionally at 30 per arm; treat 50 per arm as an early signal, not automatic proof.
+- Do not introduce a C arm until E01 has accumulated enough traffic to justify another split.
