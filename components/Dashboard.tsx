@@ -426,6 +426,8 @@ export default function Dashboard() {
 
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
   const readyCount = data?.counts["send-now"] ?? 0;
+  const run = data?.latestRun;
+  const runState = !run ? "AWAITING FIRST RUN" : (run.readyStart !== null && run.readyStart >= 10) ? "BUFFER HEALTHY" : run.persistence.toUpperCase().includes("BLOCKED") ? "PERSISTENCE BLOCKED" : (run.readyAdded ?? 0) >= 5 ? "TARGET MET" : "SHORT OF TARGET";
 
   return (
     <>
@@ -469,6 +471,14 @@ export default function Dashboard() {
         <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || loading}>{reconciling ? "RECONCILING…" : "RECONCILE SENT ↻"}</button>
         <button className="refresh" onClick={() => void load()} disabled={loading || reconciling}>{loading ? "SYNCING…" : "REFRESH ↻"}</button>
       </nav>
+
+      <section className="run-strip" aria-label="Last hourly production run">
+        <div><span>LAST RUN</span><strong>{run?.localTime || "NOT YET RECORDED"}</strong></div>
+        <div><span>VERIFIED NEW READY / 05</span><strong>{run?.readyAdded ?? "—"} / 05</strong></div>
+        <div><span>SCREENED / DEEP AUDITS</span><strong>{run ? `${run.screened ?? "—"} / ${run.audited ?? "—"}` : "— / —"}</strong></div>
+        <div><span>ACCEPTANCE</span><strong>{runState}</strong></div>
+        <div className="run-blocker"><span>BOTTLENECK</span><strong>{run?.blocker || "Awaiting RUNS readback"}</strong></div>
+      </section>
 
       <main className={view === "send-now" ? "main-focus" : ""}>
         {error && <div className="error" role="alert"><strong>SYSTEM</strong><span>{error}</span></div>}
