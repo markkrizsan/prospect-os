@@ -139,7 +139,11 @@ function joinOperational(
     };
     const opState = normalizeKey(opportunity?.status || "");
     const outState = normalizeKey(outreach?.status || "");
-    if (opportunity && outreach && opState !== outState &&
+    // Older V9 opportunities retain their original READY label while OUTREACH is
+    // deliberately V10 RE-AUDIT/HOLD. This is a blocked queue state, not corruption.
+    const expectedLegacyReview = isReadyState(opportunity?.status || "") &&
+      (outState.includes("re audit") || outState.includes("hold"));
+    if (opportunity && outreach && opState !== outState && !expectedLegacyReview &&
         !(isReadyState(opportunity.status) && isReadyState(outreach.status))) {
       entryIssues.push("OPPORTUNITIES/OUTREACH status disagreement");
     }
