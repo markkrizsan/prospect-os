@@ -148,3 +148,17 @@ export async function reconcileSentProspects(): Promise<ProspectData> {
   }
   return readProspects();
 }
+
+export async function recordProspectOutcome(id: string, outcome: string, amount?: number, note = ""): Promise<ProspectData> {
+  const allowed = new Set(["REPLIED", "MEETING", "PROPOSAL", "WON", "LOST"]);
+  const normalized = outcome.trim().toUpperCase();
+  if (!allowed.has(normalized)) throw new Error("Unsupported outcome stage");
+  const { target, secret } = endpoint("recordOutcome");
+  const response = await fetchAppsScriptResponse(target, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ secret, action: "RECORD_OUTCOME", opportunityId: id, outcome: normalized, amount, note }),
+  });
+  await parseResponse(response, secret);
+  return readProspects();
+}

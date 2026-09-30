@@ -38,6 +38,9 @@ function doPost(e) {
     if (!id) return json_({ ok: false, error: "Missing opportunity ID" });
     if (action === "MARK_SENT") return withLock_(function () { return markSent_(id, body.sentAt); });
     if (action === "REJECT") return withLock_(function () { return reject_(id, body.reason); });
+    if (action === "RECORD_OUTCOME") return withLock_(function () {
+      return recordOutcome_(id, body.outcome, body.amount, body.note);
+    });
     return json_({ ok: false, error: "Unsupported action" });
   } catch (error) {
     return json_({ ok: false, error: safeMessage_(error) });
@@ -139,7 +142,7 @@ function reconcileSentRecord_(spreadsheet, opportunity, outreach, stamp) {
     ? getByHeader_({ sheet: pipelineSheet, row: pipelineRow, headers: headerMap_(pipelineSheet) }, "Stage").toUpperCase()
     : "";
   const replied = /^(YES|TRUE|REPLIED|POSITIVE|NEGATIVE)$/i.test(getByHeader_(outreach, "Reply?")) ||
-    /^(REPLIED|CONVERSATION|PROPOSAL|DEPOSIT|PAID|CLOSED|WON)$/i.test(pipelineStage);
+    /^(REPLIED|CONVERSATION|MEETING|PROPOSAL|DEPOSIT|PAID|CLOSED|WON|LOST)$/i.test(pipelineStage);
   const suppressed = /opt.?out|unsubscrib|suppress|do not contact/i.test([
     getByHeader_(outreach, "Status"), getByHeader_(outreach, "Next Move"), pipelineStage,
   ].join(" "));
@@ -185,6 +188,66 @@ function upsertPipeline_(spreadsheet, opportunity, outreach, stamp, due, replied
     setIfBlank_(existing, "Source", "V10 / USER SEND");
     setIfBlank_(existing, "Message Angle", getByHeader_(outreach, "Subject"));
   }
+}
+
+
+function recordOutcome_(id, outcome, amount, note) {
+  const stage = String(outcome || "").trim().toUpperCase();
+  const allowed = ["REPLIED", "MEETING", "PROPOSAL", "WON", "LOST"];
+  if (allowed.indexOf(stage) === -1) throw new Error("Unsupported outcome stage");
+
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  assertReconciliationSchema_(spreadsheet);
+  const opportunity = requiredRecord_(spreadsheet, "OPPORTUNITIES", id);
+  const outreach = requiredRecord_(spreadsheet, "OUTREACH", id);
+  if (!getByHeader_(outreach, "Sent At") || !/^SENT$/i.test(getByHeader_(outreach, "Status"))) {
+    throw new Error("Outcome can only be recorded after SENT is confirmed");
+  }
+
+  const sentStamp = parseDate_(getByHeaderRaw_(outreach, "Sent At"));
+  if (!sentStamp) throw new Error("SENT timestamp is invalid");
+  reconcileSentRecord_(spreadsheet, opportunity, outreach, sentStamp);
+
+  const pipeline = requiredRecord_(spreadsheet, "PIPELINE", id);
+  const current = getByHeader_(pipeline, "Stage").toUpperCase() || "SENT";
+  const rank = { "SENT": 0, "REPLIED": 1, "CONVERSATION": 2, "MEETING": 2, "PROPOSAL": 3, "DEPOSIT": 4, "PAID": 4, "WON": 4, "CLOSED": 4, "LOST": 4 };
+  if (current === "WON" && stage !== "WON") throw new Error("WON outcome cannot be downgraded");
+  if (current === "LOST" && stage !== "LOST") throw new Error("LOST outcome cannot be reopened through this action");
+  if ((rank[stage] || 0) < (rank[current] || 0)) throw new Error("Outcome stage cannot move backward");
+
+  const today = todayInSheet_(spreadsheet);
+  setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Stage", stage);
+  setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Last Touch", today);
+
+  if (stage !== "LOST") {
+    setByHeader_(outreach.sheet, outreach.row, outreach.headers, "Reply?", "YES");
+    setByHeader_(outreach.sheet, outreach.row, outreach.headers, "Reply Type", "POSITIVE");
+    setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Reply?", "YES");
+    setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Qualified Conversation?", stage === "REPLIED" ? "UNKNOWN" : "YES");
+    setByHeader_(outreach.sheet, outreach.row, outreach.headers, "Follow-up Due", "");
+  }
+
+  const numericAmount = amount === "" || amount == null ? "" : Number(String(amount).replace(/[$,]/g, ""));
+  if (numericAmount !== "" && (!Number.isFinite(numericAmount) || numericAmount < 0)) throw new Error("Outcome amount must be a non-negative number");
+  if (stage === "PROPOSAL" && numericAmount !== "") setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Proposal $", numericAmount);
+  if (stage === "WON" && numericAmount !== "") setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Revenue $", numericAmount);
+
+  const nextByStage = {
+    "REPLIED": "Reply and qualify the opportunity",
+    "MEETING": "Run discovery and define scope",
+    "PROPOSAL": "Follow up on proposal",
+    "WON": "Begin delivery",
+    "LOST": "Closed — preserve learning"
+  };
+  setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Next Action", nextByStage[stage]);
+  setByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Next Action Date", stage === "WON" || stage === "LOST" ? "" : today);
+  setByHeader_(outreach.sheet, outreach.row, outreach.headers, "Next Move", nextByStage[stage]);
+
+  const cleanNote = String(note || "").trim();
+  appendByHeader_(pipeline.sheet, pipeline.row, pipeline.headers, "Outcome / Learning",
+    stage + " recorded " + today + (cleanNote ? ": " + cleanNote : "."));
+  SpreadsheetApp.flush();
+  return json_({ ok: true, id: id, outcome: stage });
 }
 
 function reject_(id, reason) {

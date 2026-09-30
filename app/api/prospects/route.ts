@@ -1,5 +1,5 @@
 import { isAuthorized, unauthorized } from "@/lib/auth";
-import { diagnoseProspectPayload, markProspectSent, readProspectsCached, reconcileSentProspects, rejectProspect } from "@/lib/prospectApi";
+import { diagnoseProspectPayload, markProspectSent, readProspectsCached, recordProspectOutcome, reconcileSentProspects, rejectProspect } from "@/lib/prospectApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!isAuthorized(request)) return unauthorized();
   try {
-    const body = await request.json() as { action?: unknown; id?: unknown; reason?: unknown };
+    const body = await request.json() as { action?: unknown; id?: unknown; reason?: unknown; outcome?: unknown; amount?: unknown; note?: unknown };
     if (body.action === "SYNC_SENT") {
       return Response.json(await reconcileSentProspects(), { headers: { "Cache-Control": "private, no-store" } });
     }
@@ -39,7 +39,12 @@ export async function POST(request: Request) {
     if (body.action === "REJECT" && typeof body.reason === "string" && body.reason.trim()) {
       return Response.json(await rejectProspect(body.id.trim(), body.reason.trim()), { headers: { "Cache-Control": "private, no-store" } });
     }
-    return Response.json({ error: "A valid MARK_SENT, REJECT or SYNC_SENT action is required" }, { status: 400 });
+    if (body.action === "RECORD_OUTCOME" && typeof body.outcome === "string") {
+      const amount = typeof body.amount === "number" ? body.amount : undefined;
+      const note = typeof body.note === "string" ? body.note : "";
+      return Response.json(await recordProspectOutcome(body.id.trim(), body.outcome, amount, note), { headers: { "Cache-Control": "private, no-store" } });
+    }
+    return Response.json({ error: "A valid MARK_SENT, REJECT, RECORD_OUTCOME or SYNC_SENT action is required" }, { status: 400 });
   } catch (error) {
     return failure(error);
   }

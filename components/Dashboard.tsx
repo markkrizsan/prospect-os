@@ -227,12 +227,14 @@ function ProspectCard({
   onMarkSent,
   onReject,
   onNotice,
+  onLogOutcome,
 }: {
   item: Prospect;
   busy: boolean;
   onMarkSent: (item: Prospect) => Promise<void>;
   onReject: (item: Prospect) => Promise<void>;
   onNotice: (message: string) => void;
+  onLogOutcome: (item: Prospect) => Promise<void>;
 }) {
   const site = cleanUrl(item.website);
   const email = composeOutboundPacket(item);
@@ -288,6 +290,7 @@ function ProspectCard({
         {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
         <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY ALL</button>
         <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
+        {Boolean(item.sentAt) && <button onClick={() => void onLogOutcome(item)} disabled={busy}>LOG OUTCOME</button>}
         <button className="reject" onClick={() => void onReject(item)} disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}>REJECT</button>
         <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy || !item.readyValidated || Boolean(item.sentAt)}>
           {busy ? "VERIFYING…" : item.sentAt ? "SENT ✓" : "MARK SENT"}
@@ -494,6 +497,41 @@ export default function Dashboard() {
     }
   }
 
+
+  async function logOutcome(item: Prospect) {
+    const raw = window.prompt("Outcome: REPLIED, MEETING, PROPOSAL, WON, or LOST");
+    if (!raw) return;
+    const outcome = raw.trim().toUpperCase();
+    if (!["REPLIED", "MEETING", "PROPOSAL", "WON", "LOST"].includes(outcome)) {
+      setError("Use REPLIED, MEETING, PROPOSAL, WON, or LOST.");
+      return;
+    }
+    let amount: number | undefined;
+    if (outcome === "PROPOSAL" || outcome === "WON") {
+      const value = window.prompt(outcome === "PROPOSAL" ? "Proposal amount in dollars (optional)" : "Won revenue in dollars (optional)");
+      if (value?.trim()) {
+        const parsed = Number(value.replace(/[$,]/g, ""));
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          setError("Amount must be a non-negative number.");
+          return;
+        }
+        amount = parsed;
+      }
+    }
+    const note = window.prompt("Outcome note / learning (optional)") ?? "";
+    setBusyId(item.id);
+    setError("");
+    try {
+      const next = await request({ method: "POST", body: JSON.stringify({ action: "RECORD_OUTCOME", id: item.id, outcome, amount, note }) });
+      acceptVerifiedData(next);
+      setNotice(`${item.company || item.id}: ${outcome} recorded`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Outcome update failed");
+    } finally {
+      setBusyId("");
+    }
+  }
+
   async function reconcileSent() {
     if (!window.confirm("Repair existing SENT records in PIPELINE and conditional follow-up dates? No emails will be sent.")) return;
     setReconciling(true);
@@ -634,7 +672,7 @@ export default function Dashboard() {
               {records.map((item) =>
                 item.source.toLowerCase() === "market"
                   ? <MarketCard key={item.id || `${item.company}-market`} item={item} />
-                  : <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} />
+                  : <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} onLogOutcome={logOutcome} />
               )}
             </div>
           </>

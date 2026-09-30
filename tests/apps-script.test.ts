@@ -256,3 +256,30 @@ test("materializer detects explicit website replacement language without confusi
   assert.equal(f.run("hasActiveRebuildSignal_", "<p>Our new website is coming soon.</p>"), true);
   assert.equal(f.run("hasActiveRebuildSignal_", "<p>Commercial construction and renovation services.</p>"), false);
 });
+
+test("RECORD_OUTCOME advances SENT pipeline monotonically and captures proposal/revenue", () => {
+  const f = fixture({ status: "SENT", sentAt: "9/30/2026" });
+  f.run("syncSent_");
+  let response = JSON.parse(f.run("recordOutcome_", "V10-O038", "REPLIED", "", "Interested").text);
+  assert.equal(response.outcome, "REPLIED");
+  assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "REPLIED");
+  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Reply?"], "YES");
+  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Follow-up Due"], "");
+
+  response = JSON.parse(f.run("recordOutcome_", "V10-O038", "MEETING", "", "Discovery booked").text);
+  assert.equal(response.outcome, "MEETING");
+  assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "MEETING");
+
+  f.run("recordOutcome_", "V10-O038", "PROPOSAL", 5000, "Proposal sent");
+  assert.equal(f.sheets.PIPELINE.record("V10-O038")?.["Proposal $"], 5000);
+
+  f.run("recordOutcome_", "V10-O038", "WON", 5000, "Deposit received");
+  assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "WON");
+  assert.equal(f.sheets.PIPELINE.record("V10-O038")?.["Revenue $"], 5000);
+  assert.throws(() => f.run("recordOutcome_", "V10-O038", "MEETING", "", ""), /cannot be downgraded|cannot move backward/);
+});
+
+test("RECORD_OUTCOME refuses unsent records", () => {
+  const f = fixture();
+  assert.throws(() => f.run("recordOutcome_", "V10-O038", "REPLIED", "", ""), /only be recorded after SENT/);
+});
