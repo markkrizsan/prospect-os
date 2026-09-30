@@ -404,13 +404,13 @@ export default function Dashboard() {
   }
 
   async function reconcileSent() {
-    if (!window.confirm("Reconcile existing SENT records across PIPELINE, TODAY, and follow-ups? This does not send emails.")) return;
+    if (!window.confirm("Repair existing SENT records in PIPELINE and conditional follow-up dates? No emails will be sent.")) return;
     setReconciling(true);
     setError("");
     try {
       const next = await request({ method: "POST", body: JSON.stringify({ action: "SYNC_SENT" }) });
       setData(next);
-      setNotice("Recorded SENT state reconciled across the Sheet");
+      setNotice("SENT follow-ups and PIPELINE records reconciled");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "SENT reconciliation failed");
     } finally {
@@ -468,7 +468,7 @@ export default function Dashboard() {
           <span className="sr-only">Search prospects</span>
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SEARCH /" />
         </label>
-        <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || loading}>{reconciling ? "RECONCILING…" : "RECONCILE SENT ↻"}</button>
+        <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || loading}>{reconciling ? "REPAIRING…" : "REPAIR FOLLOW-UPS ↻"}</button>
         <button className="refresh" onClick={() => void load()} disabled={loading || reconciling}>{loading ? "SYNCING…" : "REFRESH ↻"}</button>
       </nav>
 
