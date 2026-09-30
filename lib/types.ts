@@ -27,6 +27,10 @@ export interface Prospect {
   signalStrength: string;
   screeningReason: string;
   notes: string;
+  /** Structural readiness after joining both authoritative records; never inferred from one status cell. */
+  readyValidated?: boolean;
+  /** State inconsistencies contain IDs/statuses only, never contact data. */
+  stateIssues?: string[];
 }
 
 export interface RunMetrics {
@@ -49,5 +53,6 @@ export interface ProspectData {
   latestRun: RunMetrics | null;
   syncedAt: string;
   prospects: Prospect[];
+  consistencyIssues: string[];
   counts: Record<ProspectView, number>;
 }
