@@ -1,0 +1,22 @@
+name: Verify Prospect OS
+
+on:
+  push:
+    branches:
+      - main
+      - ci/verify-prospect-os-v10-20260929
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
