@@ -1,6 +1,6 @@
 const SPREADSHEET_ID = "1K2nfLH1ZBMJZLg0fiicnTJFBzobb3mCKt6rYsEmwR9M";
 // Do not drop MARKET from this payload: the live dashboard needs research and backlog views.
-const READ_TABS = ["MARKET", "OUTREACH", "OPPORTUNITIES"];
+const READ_TABS = ["MARKET", "OUTREACH", "OPPORTUNITIES", "RUNS"];
 
 function doGet(e) {
   try {
