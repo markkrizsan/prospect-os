@@ -165,3 +165,13 @@ test("a rejected prospect cannot be shown in the manual send queue", () => {
   assert.equal(data.counts["send-now"], 0);
   assert.equal(inView(data.prospects[0], "send-now"), false);
 });
+
+test("legacy READY research under explicit V10 RE-AUDIT stays out of queue without a false corruption alert", () => {
+  const data = normalizePayload({
+    OPPORTUNITIES: [opportunity("V9-O020", { Status: "READY" })],
+    OUTREACH: [outreach("V9-O020", { Status: "V10 RE-AUDIT", "Email / Channel": "" })],
+  });
+  assert.equal(data.counts["send-now"], 0);
+  assert.equal(data.prospects[0].status, "V10 RE-AUDIT");
+  assert.equal(data.consistencyIssues.length, 0);
+});
