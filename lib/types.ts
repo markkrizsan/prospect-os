@@ -51,6 +51,8 @@ export interface RunMetrics {
 
 export interface ProspectData {
   latestRun: RunMetrics | null;
+  /** Actions explicitly supported by the currently deployed Apps Script backend. */
+  capabilities?: string[];
   syncedAt: string;
   prospects: Prospect[];
   consistencyIssues: string[];

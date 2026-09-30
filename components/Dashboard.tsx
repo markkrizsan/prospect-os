@@ -234,7 +234,7 @@ function ProspectCard({
   onMarkSent: (item: Prospect) => Promise<void>;
   onReject: (item: Prospect) => Promise<void>;
   onNotice: (message: string) => void;
-  onLogOutcome: (item: Prospect) => Promise<void>;
+  onLogOutcome?: (item: Prospect) => Promise<void>;
 }) {
   const site = cleanUrl(item.website);
   const email = composeOutboundPacket(item);
@@ -290,7 +290,7 @@ function ProspectCard({
         {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
         <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY ALL</button>
         <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
-        {Boolean(item.sentAt) && <button onClick={() => void onLogOutcome(item)} disabled={busy}>LOG OUTCOME</button>}
+        {Boolean(item.sentAt) && onLogOutcome && <button onClick={() => void onLogOutcome(item)} disabled={busy}>LOG OUTCOME</button>}
         <button className="reject" onClick={() => void onReject(item)} disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}>REJECT</button>
         <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy || !item.readyValidated || Boolean(item.sentAt)}>
           {busy ? "VERIFYING…" : item.sentAt ? "SENT ✓" : "MARK SENT"}
@@ -672,7 +672,7 @@ export default function Dashboard() {
               {records.map((item) =>
                 item.source.toLowerCase() === "market"
                   ? <MarketCard key={item.id || `${item.company}-market`} item={item} />
-                  : <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} onLogOutcome={logOutcome} />
+                  : <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} onLogOutcome={data?.capabilities?.includes("RECORD_OUTCOME") ? logOutcome : undefined} />
               )}
             </div>
           </>

@@ -59,7 +59,7 @@ function list_() {
   READ_TABS.forEach(function (name) {
     data[name] = sheetToObjects_(requiredSheet_(spreadsheet, name));
   });
-  return json_({ ok: true, data: data, syncedAt: new Date().toISOString() });
+  return json_({ ok: true, data: data, syncedAt: new Date().toISOString(), capabilities: ["MATERIALIZE_QUALIFIED", "RECORD_OUTCOME"] });
 }
 
 function markSent_(id, sentAt) {

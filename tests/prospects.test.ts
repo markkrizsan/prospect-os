@@ -210,3 +210,10 @@ test("a research-stage rejected OPPORTUNITY may exist without OUTREACH without r
   assert.equal(data.counts.rejected, 1);
   assert.equal(data.consistencyIssues.length, 0);
 });
+
+test("capabilities are opt-in so UI actions wait for the live backend deployment", () => {
+  const legacy = normalizePayload({ OUTREACH: [], OPPORTUNITIES: [] });
+  assert.deepEqual(legacy.capabilities, []);
+  const current = normalizePayload({ OUTREACH: [], OPPORTUNITIES: [], capabilities: ["RECORD_OUTCOME"] });
+  assert.deepEqual(current.capabilities, ["RECORD_OUTCOME"]);
+});
