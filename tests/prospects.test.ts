@@ -86,3 +86,15 @@ test("COPY ALL extracts annotated published address and refuses guessed addresse
   assert.equal(composeOutboundPacket(item), "");
   assert.deepEqual(outreachCopyIssues(item), ["verified recipient email missing"]);
 });
+
+test("latest RUNS record exposes five-per-hour acceptance without treating unknown metrics as zero", () => {
+  const data = normalizePayload({ RUNS: [
+    { "Run ID (UTC)": "2026-09-30T08:00:00Z", "Local Run Time": "Sep 30, 1 AM", Mode: "HOURLY", "READY Start": "0", "Cheap Screened": "44", "Deep Audited": "15", "Substantive PASS": "7", "Contacts Verified": "5", "READY Persisted": "4", "READY End": "4", "Gap To Five": "1", "Primary Blocker": "CONTACT PROOF", "Persistence + Evidence": "4/4 READBACK PASS" },
+  ] });
+  assert.equal(data.latestRun?.readyAdded, 4);
+  assert.equal(data.latestRun?.gap, 1);
+  assert.equal(data.latestRun?.screened, 44);
+  const missing = normalizePayload({ RUNS: [{ "Run ID (UTC)": "2026-09-30T09:00:00Z", "Ready Persisted": "", "Primary Blocker": "UNKNOWN" }] });
+  assert.equal(missing.latestRun?.readyAdded, null);
+  assert.equal(normalizePayload({}).latestRun, null);
+});
