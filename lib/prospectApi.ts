@@ -2,6 +2,7 @@ import "server-only";
 
 import { inView, normalizePayload } from "@/lib/normalizeProspects";
 import type { ProspectData } from "@/lib/types";
+import { assertAppsScriptUrl, fetchAppsScriptResponse } from "@/lib/appsScriptTransport";
 
 function configuration() {
   const url = process.env.PROSPECT_API_URL;
@@ -14,7 +15,7 @@ async function parseResponse(response: Response, secret: string): Promise<unknow
   const text = await response.text();
   if (!response.ok) {
     if (response.status === 404) throw new Error(
-      "Apps Script deployment returned HTTP 404. Verify that Vercel PROSPECT_API_URL matches the current Apps Script Web app /exec URL (not the editor, /dev, or an archived deployment). Updating GitHub or deploying Vercel does not update Apps Script."
+      "The initial Apps Script /exec request returned HTTP 404. Verify that PROSPECT_API_URL points to the currently active deployed web app with the correct access settings. No successful response was received; inspect Apps Script Executions and the Sheet before retrying."
     );
     throw new Error(`Apps Script returned HTTP ${response.status}. Check the active Web app deployment and execution permissions.`);
   }
@@ -36,7 +37,7 @@ async function parseResponse(response: Response, secret: string): Promise<unknow
 
 function endpoint(action: string) {
   const { url, secret } = configuration();
-  const target = new URL(url);
+  const target = assertAppsScriptUrl(url);
   target.searchParams.set("secret", secret);
   target.searchParams.set("token", secret);
   target.searchParams.set("key", secret);
@@ -52,7 +53,7 @@ function secretHeaders(secret: string): HeadersInit {
 
 async function readRawProspects(): Promise<unknown> {
   const { target, secret } = endpoint("list");
-  const response = await fetch(target, { method: "GET", cache: "no-store", redirect: "follow", headers: secretHeaders(secret) });
+  const response = await fetchAppsScriptResponse(target, { method: "GET", headers: secretHeaders(secret) });
   return parseResponse(response, secret);
 }
 
@@ -78,10 +79,8 @@ export async function diagnoseProspectPayload(): Promise<unknown> {
 async function mutateProspect(action: "MARK_SENT" | "REJECT", id: string, reason = ""): Promise<ProspectData> {
   const endpointAction = action === "MARK_SENT" ? "markSent" : "reject";
   const { target, secret } = endpoint(endpointAction);
-  const response = await fetch(target, {
+  const response = await fetchAppsScriptResponse(target, {
     method: "POST",
-    cache: "no-store",
-    redirect: "follow",
     headers: { ...secretHeaders(secret), "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({
       secret,
@@ -122,8 +121,8 @@ export async function rejectProspect(id: string, reason: string): Promise<Prospe
 /** Reconcile only previously SENT Sheet records. Does not send, approve or create outreach. */
 export async function reconcileSentProspects(): Promise<ProspectData> {
   const { target, secret } = endpoint("syncSent");
-  const response = await fetch(target, {
-    method: "POST", cache: "no-store", redirect: "follow",
+  const response = await fetchAppsScriptResponse(target, {
+    method: "POST",
     headers: { ...secretHeaders(secret), "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ secret, token: secret, key: secret, apiKey: secret, action: "SYNC_SENT" }),
   });
