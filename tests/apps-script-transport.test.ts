@@ -30,6 +30,51 @@ test("a POST runs once, then retries only GET of the SAME transiently-404 signed
   assert.deepEqual(sleeps, [1800, 2500]);
 });
 
+test("follows a second approved signed ContentService redirect using GET only", async () => {
+  const second = "https://script.googleusercontent.com/macros/echo?user_content_key=SIGNED_SECOND";
+  const calls: Array<{ url: string; method: string }> = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push({ url: String(url), method: init?.method || "GET" });
+    if (String(url) === deployment.toString()) return Response.redirect(contentUrl, 302);
+    if (String(url) === contentUrl) return Response.redirect(second, 302);
+    return Response.json({ ok: true });
+  };
+  const response = await fetchAppsScriptResponse(
+    deployment, { method: "POST", body: '{"action":"SYNC_SENT"}' }, fetcher, async () => {},
+  );
+  assert.deepEqual(await response.json(), { ok: true });
+  assert.deepEqual(calls.map((call) => call.method), ["POST", "GET", "GET"]);
+  assert.deepEqual(calls.map((call) => call.url), [deployment.toString(), contentUrl, second]);
+});
+
+test("rejects an unapproved second hop without repeating a mutation or visiting the destination", async () => {
+  const calls: string[] = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    calls.push((init?.method || "GET") + " " + String(url));
+    return String(url) === deployment.toString()
+      ? Response.redirect(contentUrl, 302)
+      : Response.redirect("https://accounts.google.com/ServiceLogin", 302);
+  };
+  await assert.rejects(
+    fetchAppsScriptResponse(deployment, { method: "POST" }, fetcher, async () => {}),
+    /unexpected destination/,
+  );
+  assert.deepEqual(calls, ["POST " + deployment.toString(), "GET " + contentUrl]);
+});
+
+test("rejects an endless signed response redirect chain after a bounded number of GETs", async () => {
+  const methods: string[] = [];
+  const fetcher: typeof fetch = async (url, init) => {
+    methods.push(init?.method || "GET");
+    return Response.redirect(contentUrl, 302);
+  };
+  await assert.rejects(
+    fetchAppsScriptResponse(deployment, { method: "POST" }, fetcher, async () => {}),
+    /redirect limit/,
+  );
+  assert.deepEqual(methods, ["POST", "GET", "GET", "GET"]);
+});
+
 test("a persistent content redirect 404 does not cause a second POST or expose its URL", async () => {
   const methods: string[] = [];
   const fetcher: typeof fetch = async (url, init) => {

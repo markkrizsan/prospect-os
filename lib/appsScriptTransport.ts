@@ -13,39 +13,46 @@ export async function fetchAppsScriptResponse(
   const response = await fetcher(target, { ...init, redirect: "manual", cache: "no-store" });
   if (![301, 302, 303, 307, 308].includes(response.status)) return response;
 
-  const location = response.headers.get("location");
-  if (!location) {
-    throw new Error("Apps Script returned a redirect without a Location header; verify the web app deployment.");
+  // ContentService may return another signed ContentService URL before JSON.
+  // Follow ONLY the approved Google content endpoint. Never replay the original
+  // POST, never forward its body/credentials to the signed response URL, and
+  // never follow a redirect to a login or unrelated Google host.
+  const signedContentUrl = (location: string | null, base: URL): URL => {
+    if (!location) {
+      throw new Error("Apps Script response redirected without a Location header; check the deployed web app.");
+    }
+    let next: URL;
+    try { next = new URL(location, base); } catch {
+      throw new Error("Apps Script returned an invalid ContentService redirect.");
+    }
+    if (next.protocol !== "https:" ||
+        next.hostname !== "script.googleusercontent.com" ||
+        !next.pathname.startsWith("/macros/")) {
+      throw new Error(
+        "Apps Script redirected to an unexpected destination. Verify deployment access (Execute as: Me; Who has access: Anyone) and the current /exec URL.",
+      );
+    }
+    return next;
+  };
+  let contentUrl = signedContentUrl(response.headers.get("location"), target);
+  for (let hop = 0; hop < 3; hop += 1) {
+    // A signed response can transiently 404. Retry GET at the SAME URL; a
+    // mutation may already have committed, so the original request is sacred.
+    let content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store", signal: init.signal });
+    for (const delay of [1800, 2500]) {
+      if (content.status !== 404) break;
+      await pause(delay);
+      content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store", signal: init.signal });
+    }
+    if (content.status === 404) {
+      throw new Error(
+        "Google ContentService's redirected response remained HTTP 404. The Apps Script operation MAY have completed. Refresh the live Sheet before trying again; the original mutation was not retried.",
+      );
+    }
+    if (![301, 302, 303, 307, 308].includes(content.status)) return content;
+    contentUrl = signedContentUrl(content.headers.get("location"), contentUrl);
   }
-  const contentUrl = new URL(location, target);
-  if (
-    contentUrl.protocol !== "https:" ||
-    contentUrl.hostname !== "script.googleusercontent.com" ||
-    !contentUrl.pathname.startsWith("/macros/")
-  ) {
-    throw new Error(
-      "Apps Script redirected to an unexpected destination. Verify deployment access (Execute as: Me; Who has access: Anyone) and the current /exec URL.",
-    );
-  }
-
-  // Google redirects ContentService responses to a signed URL. The redirect may
-  // initially return 404 due to propagation. GET the SAME URL again, never
-  // resubmit a POST that may already have changed the Sheet.
-  let content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store", signal: init.signal });
-  for (const delay of [1800, 2500]) {
-    if (content.status !== 404) break;
-    await pause(delay);
-    content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store", signal: init.signal });
-  }
-  if (content.status === 404) {
-    throw new Error(
-      "Google ContentService's redirected response remained HTTP 404. The Apps Script operation MAY have completed. Refresh the live Sheet before trying again; the original mutation was not retried.",
-    );
-  }
-  if ([301, 302, 303, 307, 308].includes(content.status)) {
-    throw new Error("The Apps Script content response redirected unexpectedly. Verify web-app permissions.");
-  }
-  return content;
+  throw new Error("Apps Script exceeded the allowed signed ContentService redirect limit; check the active web-app deployment.");
 }
 
 const RETRYABLE_READ_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
