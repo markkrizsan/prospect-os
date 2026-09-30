@@ -72,6 +72,7 @@ function fixture(opts: { status?: string; sentAt?: string; existingPipeline?: Re
   const id = "V10-O038";
   const sheets: Record<string, FakeSheet> = {
     MARKET: new FakeSheet([["Market ID", "Company / Person", "Screen"], ["V10-M0233", "Desert Cleaning", "PROMOTE"]]),
+    RUNS: new FakeSheet([["Run ID (UTC)", "READY Persisted", "Primary Blocker"]]),
     OPPORTUNITIES: new FakeSheet([oppHeaders, makeRow(oppHeaders, { "Opportunity ID": id, Status: status, Company: "Desert Cleaning", "Offer Lane": "Web Design + Development" })]),
     OUTREACH: new FakeSheet([outHeaders, makeRow(outHeaders, { "Opportunity ID": id, Status: status, Company: "Desert Cleaning",
       Person: "Desert Cleaning team", "Email / Channel": "team@example.test", "Subject Line": "Homepage idea",
@@ -131,6 +132,7 @@ test("Apps Script list retains MARKET for the live dashboard", () => {
   assert.equal(output.data.MARKET[0]["Market ID"], "V10-M0233");
   assert.equal(output.data.OUTREACH.length, 1);
   assert.equal(output.data.OPPORTUNITIES.length, 1);
+  assert.equal(output.data.RUNS.length, 0);
 });
 
 test("MARK_SENT writes through to stages, follow-up, pipeline and removes stale TODAY row", () => {
