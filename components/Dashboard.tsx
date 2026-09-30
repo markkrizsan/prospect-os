@@ -428,7 +428,7 @@ export default function Dashboard() {
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
   const readyCount = data?.counts["send-now"] ?? 0;
   const run = data?.latestRun;
-  const runState = classifyRunHealth(run, data?.syncedAt ?? new Date().toISOString(), readyCount);
+  const runState = classifyRunHealth(run ?? null, data?.syncedAt ?? new Date().toISOString(), readyCount);
 
   return (
     <>
