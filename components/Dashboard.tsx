@@ -71,7 +71,7 @@ function SendFocus({
   const site = cleanUrl(item.website);
   const recipient = extractRecipientEmail(item.contactPath);
   const email = composeOutboundPacket(item);
-  const copyIssues = outreachCopyIssues(item);
+  const copyIssues = [...outreachCopyIssues(item), ...(item.readyValidated ? [] : ["prospect is not currently READY"])];
   const copyBlocked = copyIssues.length > 0;
 
   const copyEmail = useCallback(async () => {
@@ -210,7 +210,7 @@ function ProspectCard({
 }) {
   const site = cleanUrl(item.website);
   const email = composeOutboundPacket(item);
-  const copyIssues = outreachCopyIssues(item);
+  const copyIssues = [...outreachCopyIssues(item), ...(item.readyValidated ? [] : ["prospect is not currently READY"])];
   const copyBlocked = copyIssues.length > 0;
 
   async function copyEmail() {
@@ -263,7 +263,7 @@ function ProspectCard({
         <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY ALL</button>
         <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
         <button className="reject" onClick={() => void onReject(item)} disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}>REJECT</button>
-        <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy || Boolean(item.sentAt)}>
+        <button className="mark-sent" onClick={() => void onMarkSent(item)} disabled={busy || !item.readyValidated || Boolean(item.sentAt)}>
           {busy ? "VERIFYING…" : item.sentAt ? "SENT ✓" : "MARK SENT"}
         </button>
       </footer>
@@ -454,7 +454,7 @@ export default function Dashboard() {
         </div>
         <div className="command-metrics">
           <div><span>READY</span><strong>{String(readyCount).padStart(2, "0")}</strong><small>/ 15 BUFFER</small></div>
-          <div><span>SENT TODAY</span><strong>{String(sentToday).padStart(2, "0")}</strong><small>/ 05 HR TARGET</small></div>
+          <div><span>SENT TODAY</span><strong>{String(sentToday).padStart(2, "0")}</strong><small>HUMAN CONTROLLED</small></div>
         </div>
       </header>
 
@@ -481,6 +481,13 @@ export default function Dashboard() {
       </section>
 
       <main className={view === "send-now" ? "main-focus" : ""}>
+        {Boolean(data?.consistencyIssues?.length) && (
+          <div className="error" role="status">
+            <strong>DATA INTEGRITY</strong>
+            <span>{data?.consistencyIssues.length} source inconsistencies detected. Conflicted records are excluded from SEND NOW.
+              Review the matching IDs in OPPORTUNITIES and OUTREACH before preparing new outreach.</span>
+          </div>
+        )}
         {error && <div className="error" role="alert"><strong>SYSTEM</strong><span>{error}</span></div>}
 
         {view === "send-now" && !loading && !error && records.length > 0 && (
