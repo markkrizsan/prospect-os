@@ -6,7 +6,7 @@ import test from "node:test";
 type Datum = string | Date;
 class FakeSheet {
   rows: Datum[][];
-  constructor(rows: Datum[][]) { this.rows = rows; }
+  constructor(rows: Datum[][]) { this.rows = rows.map((row) => [...row]); }
   getLastRow() { return this.rows.length; }
   getLastColumn() { return Math.max(0, ...this.rows.map((r) => r.length)); }
   appendRow(row: Datum[]) { this.rows.push([...row]); }
@@ -57,9 +57,9 @@ const oppHeaders = ["Opportunity ID", "Status", "Company", "Website", "Person", 
   "Digital Reality / Gap", "Mark Intervention Delta", "Economic Justification", "Customer Dream Outcome",
   "Value Equation Lever", "Value Gap Gate", "Why Now / Booster", "Next Action", "Market ID", "Source", "Created", "Notes"];
 const outHeaders = ["Opportunity ID", "Status", "Company", "Person", "Email / Channel", "Subject",
-  "Observation", "Relevance", "Why Mark Can Help", "Concrete Offer", "Why Now", "Value Gap",
-  "Source", "Priority", "Finished Outreach Draft", "Mark Approved?", "Sent At", "Follow-up Due",
-  "Reply?", "Reply Date", "Next Move", "Notes"];
+  "Observation", "Commercial Relevance", "Why Mark", "Micro-Offer", "Signal / Trigger", "Value Gap Hypothesis",
+  "Experiment Tag", "Founder-Minute Priority", "Draft Message", "Mark Approved?", "Sent At", "Follow-up Due",
+  "Reply?", "Reply Type", "Next Move", "Notes"];
 const pipelineHeaders = ["Opportunity ID", "Company", "Person", "Stage", "Offer Lane", "First Touch",
   "Last Touch", "Reply?", "Qualified Conversation?", "Problem / Desired Outcome", "Proposal $",
   "Deposit $", "Revenue $", "Next Action", "Next Action Date", "Outcome / Learning", "Source", "Message Angle"];
@@ -76,7 +76,7 @@ function fixture(opts: { status?: string; sentAt?: string; existingPipeline?: Re
     OPPORTUNITIES: new FakeSheet([oppHeaders, makeRow(oppHeaders, { "Opportunity ID": id, Status: status, Company: "Desert Cleaning", "Offer Lane": "Web Design + Development" })]),
     OUTREACH: new FakeSheet([outHeaders, makeRow(outHeaders, { "Opportunity ID": id, Status: status, Company: "Desert Cleaning",
       Person: "Desert Cleaning team", "Email / Channel": "team@example.test", Subject: "Homepage idea",
-      "Finished Outreach Draft": "Hi team", "Sent At": opts.sentAt ?? "", "Reply?": "NO", "Mark Approved?": "PENDING" })]),
+      "Draft Message": "Hi team", "Sent At": opts.sentAt ?? "", "Reply?": "NO", "Mark Approved?": "PENDING" })]),
     PIPELINE: new FakeSheet([pipelineHeaders, ...(opts.existingPipeline ? [makeRow(pipelineHeaders, opts.existingPipeline)] : [])]),
     TODAY: new FakeSheet([
       ...Array.from({ length: 6 }, () => Array(12).fill("")),
@@ -147,8 +147,8 @@ test("MARK_SENT writes through to stages, follow-up, pipeline and removes stale 
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "SENT");
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.["Message Angle"], "Homepage idea");
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.["Next Action Date"], "2026-10-06");
-  assert.equal(f.sheets.TODAY.rows.length, 8);
-  assert.equal(f.sheets.TODAY.rows[7][10], "V9-O028");
+  assert.equal(f.sheets.TODAY.rows.length, 9); // Preserved legacy snapshot, no extra writes.
+  assert.equal(f.sheets.TODAY.rows[8][10], "V9-O028");
   assert.equal(f.flushes, 1);
 });
 
@@ -159,7 +159,7 @@ test("MARK_SENT repeated is idempotent: no duplicate pipeline or reset sent date
   f.run("markSent_", "V10-O038", "2026-10-01T18:00:00.000Z");
   assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Sent At"], stored);
   assert.equal(f.sheets.PIPELINE.rows.length, 2);
-  assert.equal(f.sheets.TODAY.rows.length, 8);
+  assert.equal(f.sheets.TODAY.rows.length, 9); // Preserved legacy snapshot, no extra writes.
 });
 
 test("SYNC_SENT backfills existing sent records without downgrading replied pipeline", () => {
@@ -174,8 +174,8 @@ test("SYNC_SENT backfills existing sent records without downgrading replied pipe
   assert.equal(f.sheets.PIPELINE.rows.length, 2);
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "REPLIED");
   assert.equal(f.sheets.PIPELINE.record("V10-O038")?.["Outcome / Learning"], "Actual reply received");
-  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Follow-up Due"], "2026-10-06");
-  assert.equal(f.sheets.TODAY.rows.length, 8);
+  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Follow-up Due"], ""); // Real reply in pipeline wins over stale OUTREACH Reply? NO.
+  assert.equal(f.sheets.TODAY.rows.length, 9); // Preserved legacy snapshot, no extra writes.
 });
 
 test("REJECT cannot retroactively turn a sent record into rejected", () => {
@@ -197,4 +197,21 @@ test("schema mismatch fails before any partial SENT or PIPELINE changes", () => 
   assert.equal(f.sheets.OUTREACH.record("V10-O038")?.Status, "V10 READY");
   assert.equal(f.sheets.OPPORTUNITIES.record("V10-O038")?.Status, "V10 READY");
   assert.equal(f.sheets.PIPELINE.rows.length, 1);
+});
+
+test("missing finished draft is rejected before any SENT mutation", () => {
+  const f = fixture();
+  f.sheets.OUTREACH.rows[1][outHeaders.indexOf("Draft Message")] = "";
+  assert.throws(() => f.run("markSent_", "V10-O038", "2026-09-30T18:00:00.000Z"), /finished draft missing/);
+  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.Status, "V10 READY");
+  assert.equal(f.sheets.PIPELINE.rows.length, 1);
+});
+
+test("suppressed SENT record receives no new follow-up date", () => {
+  const f = fixture({ status: "SENT", sentAt: "9/30/2026", existingPipeline: {
+    "Opportunity ID": "V10-O038", Stage: "SUPPRESSED",
+  } });
+  f.run("syncSent_");
+  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Follow-up Due"], "");
+  assert.equal(f.sheets.PIPELINE.record("V10-O038")?.Stage, "SUPPRESSED");
 });

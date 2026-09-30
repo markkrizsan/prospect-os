@@ -69,6 +69,11 @@ function markSent_(id, sentAt) {
   if (!/^(V10 READY|READY|READY TO SEND|SENT)$/i.test(beforeOutreach)) {
     throw new Error("Only a READY or previously SENT record can be marked SENT");
   }
+  // Direct API callers must not bypass the verified recipient/draft gate.
+  if (!getByHeader_(outreach, "Email / Channel").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i) ||
+      !getByHeader_(outreach, "Subject") || !getByHeader_(outreach, "Draft Message")) {
+    throw new Error("Cannot mark SENT: verified recipient, subject or finished draft missing");
+  }
 
   const existing = getByHeaderRaw_(outreach, "Sent At");
   const stamp = existing ? parseDate_(existing) : parseDate_(sentAt || new Date());
@@ -123,13 +128,24 @@ function syncSent_() {
 
 function reconcileSentRecord_(spreadsheet, opportunity, outreach, stamp) {
   const due = businessDayOffset_(stamp, 4, spreadsheet.getSpreadsheetTimeZone() || "America/Los_Angeles");
-  const replied = /^(YES|TRUE|REPLIED|POSITIVE|NEGATIVE)$/i.test(getByHeader_(outreach, "Reply?"));
-  if (!replied && !getByHeader_(outreach, "Follow-up Due")) {
+  const id = getByHeader_(outreach, "Opportunity ID");
+  const pipelineSheet = requiredSheet_(spreadsheet, "PIPELINE");
+  const pipelineRow = findOpportunityRow_(pipelineSheet, id);
+  const pipelineStage = pipelineRow
+    ? getByHeader_({ sheet: pipelineSheet, row: pipelineRow, headers: headerMap_(pipelineSheet) }, "Stage").toUpperCase()
+    : "";
+  const replied = /^(YES|TRUE|REPLIED|POSITIVE|NEGATIVE)$/i.test(getByHeader_(outreach, "Reply?")) ||
+    /^(REPLIED|CONVERSATION|PROPOSAL|DEPOSIT|PAID|CLOSED|WON)$/i.test(pipelineStage);
+  const suppressed = /opt.?out|unsubscrib|suppress|do not contact/i.test([
+    getByHeader_(outreach, "Status"), getByHeader_(outreach, "Next Move"), pipelineStage,
+  ].join(" "));
+  if (!replied && !suppressed && !getByHeader_(outreach, "Follow-up Due")) {
     setByHeader_(outreach.sheet, outreach.row, outreach.headers, "Follow-up Due", due);
   }
-  upsertPipeline_(spreadsheet, opportunity, outreach, stamp, due, replied);
-  // TODAY is a convenience list, not the source of truth. Remove obsolete displayed READY cards.
-  removeToday_(spreadsheet, getByHeader_(outreach, "Opportunity ID"));
+  const actualDue = getByHeader_(outreach, "Follow-up Due") || due;
+  upsertPipeline_(spreadsheet, opportunity, outreach, stamp, actualDue, replied || suppressed);
+  // Legacy TODAY is now hidden reference history. The live queue is always
+  // derived from matching OUTREACH + OPPORTUNITIES; no TODAY row mutation.
 }
 
 function upsertPipeline_(spreadsheet, opportunity, outreach, stamp, due, replied) {
@@ -182,30 +198,8 @@ function reject_(id, reason) {
     appendByHeader_(record.sheet, record.row, record.headers, "Notes", "Rejected " + stamp + ": " + cleanReason);
   });
   setByHeader_(outreach.sheet, outreach.row, outreach.headers, "Next Move", "Do not send: " + cleanReason);
-  removeToday_(spreadsheet, id);
   SpreadsheetApp.flush();
   return json_({ ok: true, id: id, status: "REJECTED" });
-}
-
-function removeToday_(spreadsheet, id) {
-  const sheet = requiredSheet_(spreadsheet, "TODAY");
-  if (sheet.getLastRow() < 8) return;
-  const headers = sheet.getRange(7, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
-  const idColumn = headers.findIndex(function (value) { return normalizeHeader_(value) === normalizeHeader_("Opportunity ID"); }) + 1;
-  if (!idColumn) throw new Error("TODAY Opportunity ID header missing");
-  const values = sheet.getRange(8, idColumn, sheet.getLastRow() - 7, 1).getDisplayValues();
-  for (let i = values.length - 1; i >= 0; i -= 1) {
-    if (String(values[i][0] || "").trim() === id) sheet.deleteRow(i + 8);
-  }
-  // Re-number only live READY cards, retaining HOLD / RESEARCH labels.
-  if (sheet.getLastRow() < 8) return;
-  const rows = sheet.getRange(8, 1, sheet.getLastRow() - 7, Math.max(9, sheet.getLastColumn())).getDisplayValues();
-  let priority = 0;
-  rows.forEach(function (record, index) {
-    if (String(record[8] || "").trim().toUpperCase() === "V10 READY") {
-      sheet.getRange(index + 8, 1).setValue(String(++priority));
-    }
-  });
 }
 
 function businessDayOffset_(stamp, days, timezone) {
@@ -238,8 +232,8 @@ function parseDate_(value) {
 function assertReconciliationSchema_(spreadsheet) {
   const required = {
     "OPPORTUNITIES": ["Opportunity ID", "Status", "Company", "Offer Lane"],
-    "OUTREACH": ["Opportunity ID", "Status", "Company", "Person", "Subject", "Sent At",
-      "Mark Approved?", "Follow-up Due", "Reply?", "Next Move"],
+    "OUTREACH": ["Opportunity ID", "Status", "Company", "Person", "Email / Channel", "Subject",
+      "Draft Message", "Sent At", "Mark Approved?", "Follow-up Due", "Reply?", "Next Move"],
     "PIPELINE": ["Opportunity ID", "Company", "Person", "Stage", "Offer Lane",
       "First Touch", "Last Touch", "Reply?", "Next Action", "Next Action Date",
       "Outcome / Learning", "Source", "Message Angle"],
@@ -249,11 +243,7 @@ function assertReconciliationSchema_(spreadsheet) {
     const headers = headerMap_(sheet);
     required[name].forEach(function(column) { requiredColumn_(headers, column); });
   });
-  const today = requiredSheet_(spreadsheet, "TODAY");
-  const headers = today.getRange(7, 1, 1, today.getLastColumn()).getDisplayValues()[0];
-  if (!headers.some(function(value) {
-    return normalizeHeader_(value) === normalizeHeader_("Opportunity ID");
-  })) throw new Error("TODAY row 7 Opportunity ID header missing");
+
 }
 
 function requiredSheet_(spreadsheet, name) {
