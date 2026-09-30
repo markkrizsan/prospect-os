@@ -51,3 +51,18 @@ test("flags agency jargon in prospect-facing outreach", () => {
   });
   assert.deepEqual(clear, []);
 });
+
+test("exposes MARKET records and research/hold counts", () => {
+  const data = normalizePayload({
+    MARKET: [
+      { "Market ID": "V10-M001", "Company / Person": "Research Co", Screen: "RESEARCH", "Business Signal": "Strong business", "Digital Signal": "Weak site", "Economics Proxy": "High-value work", "Offer Lane": "Web Design + Development" },
+      { "Market ID": "V10-M002", "Company / Person": "Hold Co", Screen: "HOLD", "Business Signal": "Strong business" },
+    ],
+  });
+  assert.equal(data.counts.market, 2);
+  assert.equal(data.counts.research, 1);
+  assert.equal(data.counts.hold, 1);
+  assert.equal(data.prospects[0].company, "Research Co");
+  assert.equal(data.prospects[0].businessStrength, "Strong business");
+  assert.equal(data.prospects[0].commercialGap, "Weak site");
+});

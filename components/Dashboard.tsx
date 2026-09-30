@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { outreachQualityIssues } from "@/lib/normalizeProspects";
+import { inView, outreachQualityIssues } from "@/lib/normalizeProspects";
 import type { Prospect, ProspectData, ProspectView } from "@/lib/types";
 
 const VIEWS: Array<{ id: ProspectView; label: string }> = [
   { id: "send-now", label: "SEND NOW" },
+  { id: "market", label: "MARKET" },
   { id: "research", label: "RESEARCH" },
+  { id: "hold", label: "HOLD" },
   { id: "sent", label: "SENT" },
   { id: "replied", label: "REPLIED" },
   { id: "all", label: "ALL" },
@@ -105,6 +107,42 @@ function ProspectCard({ item, busy, onMarkSent, onReject, onNotice }: {
   );
 }
 
+function MarketCard({ item }: { item: Prospect }) {
+  const site = cleanUrl(item.website);
+
+  return (
+    <article className="prospect-card market-card">
+      <header className="card-head">
+        <div className="index">MKT</div>
+        <div>
+          <h2>{present(item.company)}</h2>
+          <p>{[item.cityState, item.industry, item.id].filter(Boolean).join(" · ")}</p>
+        </div>
+        <div className="status"><span>●</span> {present(item.status)}</div>
+      </header>
+
+      <div className="contact-strip">
+        <div><span>WEBSITE</span><strong>{present(item.website)}</strong></div>
+        <div><span>SIGNAL STRENGTH</span><strong>{present(item.signalStrength)}</strong></div>
+        <div><span>SOURCE</span><strong>MARKET</strong></div>
+      </div>
+
+      <div className="intelligence-grid">
+        <Intelligence label="01 / BUSINESS SIGNAL" value={item.businessStrength} tone="strength" />
+        <Intelligence label="02 / DIGITAL SIGNAL" value={item.commercialGap} tone="gap" />
+        <Intelligence label="03 / ECONOMICS" value={item.economicJustification} tone="delta" />
+        <Intelligence label="04 / OFFER LANE" value={item.serviceIdea} />
+        <Intelligence label="05 / SCREENING REASON" value={item.screeningReason} />
+        <Intelligence label="06 / NOTES" value={item.notes} />
+      </div>
+
+      <footer className="actions market-actions">
+        {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
+      </footer>
+    </article>
+  );
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<ProspectData | null>(null);
   const [view, setView] = useState<ProspectView>("send-now");
@@ -143,6 +181,10 @@ export default function Dashboard() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
+    const interval = window.setInterval(() => { void load(); }, 5 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, [load]);
+  useEffect(() => {
     if (!notice) return;
     const timeout = window.setTimeout(() => setNotice(""), 3000);
     return () => window.clearTimeout(timeout);
@@ -150,16 +192,9 @@ export default function Dashboard() {
 
   const records = useMemo(() => {
     const all = data?.prospects ?? [];
-    const inView = all.filter((item) => {
-      const status = item.status.toLowerCase();
-      if (view === "send-now") return (item.version.toLowerCase() === "v10" || item.version === "10" || item.id.toLowerCase().startsWith("v10") || status.startsWith("v10 ")) && ["outreach", "opportunities"].includes(item.source.toLowerCase()) && ["ready", "ready to send", "v10 ready"].includes(status) && !item.sentAt;
-      if (view === "research") return status.includes("research");
-      if (view === "sent") return Boolean(item.sentAt) || status === "sent";
-      if (view === "replied") return Boolean(item.repliedAt) || status.includes("replied") || status === "reply";
-      return true;
-    });
+    const inViewRecords = all.filter((item) => inView(item, view));
     const term = query.trim().toLowerCase();
-    return term ? inView.filter((item) => JSON.stringify(item).toLowerCase().includes(term)) : inView;
+    return term ? inViewRecords.filter((item) => JSON.stringify(item).toLowerCase().includes(term)) : inViewRecords;
   }, [data, query, view]);
 
   async function markSent(item: Prospect) {
@@ -216,7 +251,7 @@ export default function Dashboard() {
         <div className="queue-head"><div><span>ACTIVE VIEW</span><h2>{VIEWS.find((item) => item.id === view)?.label}</h2></div><div><span>RECORDS</span><strong>{String(records.length).padStart(2, "0")}</strong></div><div><span>LAST SYNC</span><strong>{data?.syncedAt ? new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</strong></div></div>
         {error && <div className="error" role="alert"><strong>SHEET CONNECTION</strong><span>{error}</span></div>}
         {!loading && !error && records.length === 0 && <section className="empty"><span>00</span><h2>NO RECORDS<br />IN THIS VIEW</h2><p>Synchronized from the Google Sheet. Nothing has been copied into another database.</p></section>}
-        <div className="prospect-list">{records.map((item) => <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} />)}</div>
+        <div className="prospect-list">{records.map((item) => item.source.toLowerCase() === "market" ? <MarketCard key={item.id || `${item.company}-market`} item={item} /> : <ProspectCard key={item.id || `${item.company}-${item.person}`} item={item} busy={busyId === item.id} onMarkSent={markSent} onReject={rejectProspect} onNotice={setNotice} />)}</div>
       </main>
       <footer className="system-footer"><span>SINGLE SOURCE OF TRUTH → GOOGLE SHEETS</span><span>V10 / EXECUTION INTERFACE</span></footer>
       <div className="sr-only" aria-live="polite">{notice}</div>

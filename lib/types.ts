@@ -1,4 +1,4 @@
-export type ProspectView = "send-now" | "research" | "sent" | "replied" | "all";
+export type ProspectView = "send-now" | "market" | "research" | "hold" | "sent" | "replied" | "all";
 
 export interface Prospect {
   id: string;
@@ -22,6 +22,11 @@ export interface Prospect {
   zohoUrl: string;
   sentAt: string;
   repliedAt: string;
+  cityState: string;
+  industry: string;
+  signalStrength: string;
+  screeningReason: string;
+  notes: string;
 }
 
 export interface ProspectData {

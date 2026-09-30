@@ -31,7 +31,7 @@ function collect(payload: unknown): Array<{ source: string; record: UnknownRecor
   const root = payload && typeof payload === "object" ? payload as UnknownRecord : {};
   const data = root.data && typeof root.data === "object" ? root.data as UnknownRecord : root;
   const output: Array<{ source: string; record: UnknownRecord }> = [];
-  for (const source of ["OUTREACH", "OPPORTUNITIES"]) {
+  for (const source of ["MARKET", "OUTREACH", "OPPORTUNITIES"]) {
     const match = Object.entries(data).find(([key]) => normalizeKey(key) === normalizeKey(source));
     for (const record of asRecords(match?.[1])) output.push({ source, record });
   }
@@ -47,27 +47,32 @@ function collect(payload: unknown): Array<{ source: string; record: UnknownRecor
 
 function prospect(record: UnknownRecord, source: string): Prospect {
   return {
-    id: pick(record, "Opportunity ID", "Prospect ID", "ID"),
+    id: pick(record, "Opportunity ID", "Market ID", "Prospect ID", "ID"),
     source: pick(record, "Source Tab", "Sheet") || source.toUpperCase(),
     version: pick(record, "Conversation Engine", "Engine Version", "Version", "CE Version"),
-    status: pick(record, "Status", "State", "Outreach Status", "Stage"),
-    company: pick(record, "Company", "Business", "Prospect"),
+    status: pick(record, "Status", "Screen", "State", "Outreach Status", "Stage"),
+    company: pick(record, "Company", "Company / Person", "Business", "Prospect"),
     person: pick(record, "Person", "Contact Name", "Contact", "Decision Maker"),
     role: pick(record, "Role", "Title", "Person Role"),
     website: pick(record, "Website", "Company URL", "URL"),
     contactPath: pick(record, "Contact Path", "Email", "Contact URL", "Contact Method"),
-    businessStrength: pick(record, "Business Strength Evidence", "Business Strength", "Business (FACT)", "Strength"),
-    commercialGap: pick(record, "Digital Reality / Gap", "Digital/Commercial Gap", "Digital Commercial Gap", "Commercial Gap", "Digital Gap"),
+    businessStrength: pick(record, "Business Strength Evidence", "Business Strength", "Business (FACT)", "Business Signal", "Strength"),
+    commercialGap: pick(record, "Digital Reality / Gap", "Digital/Commercial Gap", "Digital Commercial Gap", "Digital Signal", "Commercial Gap", "Digital Gap"),
     interventionDelta: pick(record, "Mark Intervention Delta", "Intervention Delta", "Mark Delta"),
-    economicJustification: pick(record, "Economic Justification", "Commercial Justification", "Economic Case"),
+    economicJustification: pick(record, "Economic Justification", "Commercial Justification", "Economics Proxy", "Economic Case"),
     whyNow: pick(record, "Why Now / Booster", "Signal / Trigger", "Why Now/Trigger", "Why Now", "Trigger"),
-    serviceIdea: pick(record, "Service Idea", "Service", "Offer Idea"),
+    serviceIdea: pick(record, "Service Idea", "Offer Lane", "Service", "Offer Idea"),
     microOffer: pick(record, "Micro-Offer", "Micro Offer"),
     subjectLine: pick(record, "Subject Line", "Email Subject", "Subject"),
     outreachDraft: pick(record, "Finished Outreach Draft", "Outreach Draft", "Draft Message", "Draft", "Message"),
     zohoUrl: pick(record, "Zoho URL", "Zoho Record URL", "CRM URL"),
     sentAt: pick(record, "Sent At", "Sent Date", "Sent Timestamp"),
     repliedAt: pick(record, "Replied At", "Reply At", "Reply Date"),
+    cityState: pick(record, "City / State", "Location"),
+    industry: pick(record, "Industry", "Category"),
+    signalStrength: pick(record, "Signal Strength", "Priority"),
+    screeningReason: pick(record, "Reason", "Screening Reason"),
+    notes: pick(record, "Notes"),
   };
 }
 
@@ -119,7 +124,9 @@ export function outreachQualityIssues(item: Pick<Prospect, "subjectLine" | "outr
 export function inView(item: Prospect, view: ProspectView): boolean {
   const status = normalizeKey(item.status);
   if (view === "send-now") return isV10(item) && ["outreach", "opportunities"].includes(item.source.toLowerCase()) && ["ready", "ready to send", "v10 ready"].includes(status) && !item.sentAt;
+  if (view === "market") return item.source.toLowerCase() === "market";
   if (view === "research") return status.includes("research");
+  if (view === "hold") return status.includes("hold");
   if (view === "sent") return Boolean(item.sentAt) || status === "sent";
   if (view === "replied") return Boolean(item.repliedAt) || status.includes("replied") || status === "reply";
   return true;
@@ -127,7 +134,7 @@ export function inView(item: Prospect, view: ProspectView): boolean {
 
 export function normalizePayload(payload: unknown, syncedAt = new Date().toISOString()): ProspectData {
   const prospects = merge(collect(payload).map(({ source, record }) => prospect(record, source)));
-  const views: ProspectView[] = ["send-now", "research", "sent", "replied", "all"];
+  const views: ProspectView[] = ["send-now", "market", "research", "hold", "sent", "replied", "all"];
   return {
     syncedAt,
     prospects,
