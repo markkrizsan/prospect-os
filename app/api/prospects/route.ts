@@ -3,6 +3,8 @@ import { diagnoseProspectPayload, markProspectSent, readProspects, reconcileSent
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// One-time reconciliation may touch multiple Sheets; allow time for its response.
+export const maxDuration = 60;
 
 function failure(error: unknown) {
   const message = error instanceof Error ? error.message : "The Google Sheet could not be reached";
