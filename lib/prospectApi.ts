@@ -2,6 +2,7 @@ import "server-only";
 
 import { inView, normalizePayload } from "@/lib/normalizeProspects";
 import type { ProspectData } from "@/lib/types";
+import { unstable_cache } from "next/cache";
 import { assertAppsScriptUrl, fetchAppsScriptReadResponse, fetchAppsScriptResponse } from "@/lib/appsScriptTransport";
 
 function configuration() {
@@ -53,6 +54,22 @@ async function readRawProspects(): Promise<unknown> {
 
 export async function readProspects(): Promise<ProspectData> {
   return normalizePayload(await readRawProspects());
+}
+
+/**
+ * Dashboard reads use the Next.js Data Cache as the server-side last-known-good
+ * snapshot. The UI already keeps its own local snapshot, so an Apps Script
+ * slowdown no longer turns a healthy dashboard into a blank or timed-out one.
+ * Mutations always bypass this cache and read the live Sheet directly.
+ */
+const readProspectsCachedInternal = unstable_cache(
+  async () => readProspects(),
+  ["prospect-os-v10-last-known-good"],
+  { revalidate: 30, tags: ["prospect-os-data"] },
+);
+
+export async function readProspectsCached(): Promise<ProspectData> {
+  return readProspectsCachedInternal();
 }
 
 function describeShape(value: unknown, depth = 0): unknown {

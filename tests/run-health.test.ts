@@ -24,3 +24,15 @@ test("persistence failure, a real target miss, and a healthy reserve are distinc
   assert.equal(classifyRunHealth(run({ mode: "HOURLY / FINISHED", blocker: "CONTACT PROOF", readyAdded: 3, readyEnd: 3 }), "2026-09-30T10:11:00Z", 3), "SHORT OF TARGET");
   assert.equal(classifyRunHealth(run({ mode: "BUFFER FULL", blocker: "", readyStart: 12, readyAdded: 0, readyEnd: 12 }), "2026-09-30T10:11:00Z", 12), "BUFFER HEALTHY");
 });
+
+test("research worker is judged on durable decisions, not READY persistence it does not own", () => {
+  assert.equal(classifyRunHealth(run({
+    mode: "HOURLY / RESEARCH", blocker: "QUEUE DRAIN", screened: 15, audited: 15,
+    passed: 0, readyAdded: null, readyEnd: null,
+    persistence: "15 MARKET rows terminalized with readback",
+  }), "2026-09-30T19:00:00Z", 4), "DECISIONS VERIFIED");
+  assert.equal(classifyRunHealth(run({
+    mode: "HOURLY / RESEARCH", blocker: "QUEUE DRAIN", screened: 15, audited: 15,
+    passed: 1, readyAdded: null, readyEnd: null, persistence: "",
+  }), "2026-09-30T19:00:00Z", 4), "RESEARCH COMPLETE");
+});

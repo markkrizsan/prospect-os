@@ -15,6 +15,12 @@ export function classifyRunHealth(run: RunMetrics | null, syncedAt: string, live
     return "INCOMPLETE / NO ACCEPTANCE";
   }
   if (/blocked/i.test(run.blocker) || /blocked/i.test(run.persistence)) return "PRODUCTION BLOCKED";
+  if (mode.includes("RESEARCH")) {
+    if (run.screened === null || run.audited === null) return "UNVERIFIED RESEARCH";
+    return /terminalized|readback/i.test(run.persistence)
+      ? "DECISIONS VERIFIED"
+      : "RESEARCH COMPLETE";
+  }
   if (run.readyAdded === null || run.readyEnd === null) return "UNVERIFIED / NO ACCEPTANCE";
   if (run.readyStart !== null && run.readyStart >= 10 && liveReady >= 10) return "BUFFER HEALTHY";
   return run.readyAdded >= 5 ? "TARGET MET" : "SHORT OF TARGET";

@@ -1,5 +1,5 @@
 import { isAuthorized, unauthorized } from "@/lib/auth";
-import { diagnoseProspectPayload, markProspectSent, readProspects, reconcileSentProspects, rejectProspect } from "@/lib/prospectApi";
+import { diagnoseProspectPayload, markProspectSent, readProspectsCached, reconcileSentProspects, rejectProspect } from "@/lib/prospectApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     if (new URL(request.url).searchParams.get("diagnostic") === "shape") {
       return Response.json({ shape: await diagnoseProspectPayload() }, { headers: { "Cache-Control": "private, no-store" } });
     }
-    return Response.json(await readProspects(), { headers: { "Cache-Control": "private, no-store" } });
+    return Response.json(await readProspectsCached(), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     return failure(error);
   }

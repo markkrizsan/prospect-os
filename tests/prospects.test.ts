@@ -201,3 +201,12 @@ test("re-audit OPPORTUNITY backlog may exist without OUTREACH, but a READY orpha
   });
   assert.match(staleReady.consistencyIssues.join(" "), /missing OUTREACH/);
 });
+
+test("a research-stage rejected OPPORTUNITY may exist without OUTREACH without raising a false integrity incident", () => {
+  const data = normalizePayload({
+    OPPORTUNITIES: [opportunity("V9-O777", { Status: "REJECTED" })],
+  });
+  assert.equal(data.counts["send-now"], 0);
+  assert.equal(data.counts.rejected, 1);
+  assert.equal(data.consistencyIssues.length, 0);
+});

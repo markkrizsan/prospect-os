@@ -128,8 +128,7 @@ function joinOperational(
     const opportunityState = normalizeKey(opportunity?.status || "");
     const opportunityClaimsOperational = Boolean(opportunity) && (
       isReadyState(opportunity?.status || "") ||
-      opportunityState === "sent" ||
-      opportunityState === "rejected"
+      opportunityState === "sent"
     );
     if (!outreach && opportunityClaimsOperational) entryIssues.push("missing OUTREACH row");
 

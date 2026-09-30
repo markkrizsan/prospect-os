@@ -336,11 +336,22 @@ export default function Dashboard() {
   const [reconciling, setReconciling] = useState(false);
   const [stale, setStale] = useState(false);
   const syncInFlight = useRef(false);
+  const dataRef = useRef<ProspectData | null>(null);
 
   const acceptVerifiedData = useCallback((next: ProspectData) => {
+    const nextTime = Date.parse(next.syncedAt);
+    const currentTime = dataRef.current ? Date.parse(dataRef.current.syncedAt) : Number.NEGATIVE_INFINITY;
+
+    // Never let an older server cache overwrite a newer post-mutation or live read.
+    if (Number.isFinite(nextTime) && Number.isFinite(currentTime) && nextTime < currentTime) {
+      setStale(true);
+      return;
+    }
+
+    dataRef.current = next;
     setData(next);
     persistVerifiedSnapshot(next);
-    setStale(false);
+    setStale(!Number.isFinite(nextTime) || Date.now() - nextTime > 90_000);
   }, []);
 
   const request = useCallback(async (options?: RequestInit): Promise<ProspectData> => {
@@ -359,6 +370,7 @@ export default function Dashboard() {
 
       if (response.status === 401) {
         setLocked(true);
+        dataRef.current = null;
         setData(null);
         localStorage.removeItem(SNAPSHOT_KEY);
         throw new Error("Dashboard key required");
@@ -404,6 +416,7 @@ export default function Dashboard() {
     const hasKey = Boolean(sessionStorage.getItem("prospect-os-key"));
     const cached = hasKey ? readVerifiedSnapshot() : null;
     if (cached) {
+      dataRef.current = cached.data;
       setData(cached.data);
       setStale(true);
       setLoading(false);
@@ -501,6 +514,7 @@ export default function Dashboard() {
     sessionStorage.setItem("prospect-os-key", dashboardKey);
     const cached = readVerifiedSnapshot();
     if (cached) {
+      dataRef.current = cached.data;
       setData(cached.data);
       setStale(true);
       setLoading(false);
@@ -563,10 +577,10 @@ export default function Dashboard() {
 
       <section className="run-strip" aria-label="Last hourly production run">
         <div><span>LATEST CYCLE</span><strong>{run?.localTime || "NOT YET RECORDED"}</strong></div>
-        <div><span>VERIFIED NEW READY / 05</span><strong>{run?.readyAdded ?? "—"} / 05</strong></div>
+        <div><span>{run?.mode?.toUpperCase().includes("RESEARCH") ? "QUALIFIED THIS RUN" : "VERIFIED NEW READY / 05"}</span><strong>{run?.mode?.toUpperCase().includes("RESEARCH") ? (run?.passed ?? "—") : `${run?.readyAdded ?? "—"} / 05`}</strong></div>
         <div><span>SCREENED / DEEP AUDITS</span><strong>{run ? `${run.screened ?? "—"} / ${run.audited ?? "—"}` : "— / —"}</strong></div>
         <div><span>ACCEPTANCE</span><strong>{runState}</strong></div>
-        <div className="run-blocker"><span>BOTTLENECK</span><strong>{run?.blocker || "Awaiting RUNS readback"}</strong></div>
+        <div className="run-blocker"><span>CURRENT CONSTRAINT</span><strong>{run?.blocker || "Awaiting RUNS readback"}</strong></div>
       </section>
 
       <main className={view === "send-now" ? "main-focus" : ""}>
@@ -574,10 +588,13 @@ export default function Dashboard() {
           <div className="error" role="status">
             <strong>DATA INTEGRITY</strong>
             <span>{data?.consistencyIssues.length} source inconsistencies detected. Conflicted records are excluded from SEND NOW.
-              Review the matching IDs in OPPORTUNITIES and OUTREACH before preparing new outreach.</span>
+              {data?.consistencyIssues.slice(0, 3).join(" · ")}{data && data.consistencyIssues.length > 3 ? " · …" : ""}</span>
           </div>
         )}
         {error && <div className="error" role="alert"><strong>{data ? "SYNC DEGRADED" : "SYSTEM"}</strong><span>{error}{data && stale && lastVerified ? ` Showing last verified state from ${lastVerified}.` : ""}</span></div>}
+        {!error && stale && data && lastVerified && (
+          <div className="error" role="status"><strong>LIVE REFRESHING</strong><span>Serving the last verified state from {lastVerified} while the upstream Sheet refreshes.</span></div>
+        )}
 
         {view === "send-now" && !loading && data && records.length > 0 && (
           <SendFocus
