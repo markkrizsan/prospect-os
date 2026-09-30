@@ -89,6 +89,33 @@ export function isV10(item: Prospect): boolean {
   return version === "v10" || version === "10" || item.id.toLowerCase().startsWith("v10") || normalizeKey(item.status).startsWith("v10 ");
 }
 
+const PROSPECT_FACING_JARGON = [
+  "first-scroll",
+  "proof map",
+  "buyer path",
+  "buyer-path",
+  "procurement path",
+  "procurement-ready",
+  "authority system",
+  "conversion architecture",
+  "offer architecture",
+  "intervention delta",
+  "value gap",
+  "micro-offer",
+  "owned experience",
+  "digital representation",
+  "proof layer",
+  "qualification story",
+  "application/proof",
+  "project-proof",
+  "authority/procurement",
+];
+
+export function outreachQualityIssues(item: Pick<Prospect, "subjectLine" | "outreachDraft">): string[] {
+  const text = `${item.subjectLine}\n${item.outreachDraft}`.toLowerCase();
+  return PROSPECT_FACING_JARGON.filter((phrase) => text.includes(phrase));
+}
+
 export function inView(item: Prospect, view: ProspectView): boolean {
   const status = normalizeKey(item.status);
   if (view === "send-now") return isV10(item) && ["outreach", "opportunities"].includes(item.source.toLowerCase()) && ["ready", "ready to send", "v10 ready"].includes(status) && !item.sentAt;

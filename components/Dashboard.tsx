@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { outreachQualityIssues } from "@/lib/normalizeProspects";
 import type { Prospect, ProspectData, ProspectView } from "@/lib/types";
 
 const VIEWS: Array<{ id: ProspectView; label: string }> = [
@@ -38,6 +39,8 @@ function ProspectCard({ item, busy, onMarkSent, onReject, onNotice }: {
   const zoho = "https://mail.zoho.com/";
   const legacyId = item.id.toLowerCase().startsWith("v9") ? `LEGACY ID · ${item.id}` : item.id ? `ID · ${item.id}` : "";
   const email = [item.subjectLine ? `Subject: ${item.subjectLine}` : "", item.outreachDraft].filter(Boolean).join("\n\n");
+  const copyIssues = outreachQualityIssues(item);
+  const copyBlocked = copyIssues.length > 0;
 
   async function copyEmail() {
     if (!email) return;
@@ -64,15 +67,15 @@ function ProspectCard({ item, busy, onMarkSent, onReject, onNotice }: {
 
       <div className="intelligence-grid">
         <Intelligence label="01 / BUSINESS STRENGTH" value={item.businessStrength} tone="strength" />
-        <Intelligence label="02 / DIGITAL / COMMERCIAL GAP" value={item.commercialGap} tone="gap" />
-        <Intelligence label="03 / MARK INTERVENTION DELTA" value={item.interventionDelta} tone="delta" />
-        <Intelligence label="04 / ECONOMIC JUSTIFICATION" value={item.economicJustification} />
-        <Intelligence label="05 / WHY NOW / TRIGGER" value={item.whyNow} />
+        <Intelligence label="02 / WEBSITE GAP" value={item.commercialGap} tone="gap" />
+        <Intelligence label="03 / WHAT I WOULD CHANGE" value={item.interventionDelta} tone="delta" />
+        <Intelligence label="04 / WHY IT COULD BE WORTH IT" value={item.economicJustification} />
+        <Intelligence label="05 / WHY NOW" value={item.whyNow} />
         <Intelligence label="06 / SERVICE IDEA" value={item.serviceIdea} />
       </div>
 
       <section className="offer-band">
-        <div><span>MICRO-OFFER</span><strong>{present(item.microOffer)}</strong></div>
+        <div><span>FIRST THING I CAN OFFER</span><strong>{present(item.microOffer)}</strong></div>
         <div><span>SUBJECT LINE</span><strong>{present(item.subjectLine)}</strong></div>
       </section>
 
@@ -81,9 +84,15 @@ function ProspectCard({ item, busy, onMarkSent, onReject, onNotice }: {
         <p>{present(item.outreachDraft)}</p>
       </section>
 
+      {copyBlocked && (
+        <div className="copy-warning" role="alert">
+          <strong>COPY CHECK</strong>
+          <span>Rewrite before sending: {copyIssues.join(", ")}</span>
+        </div>
+      )}
       <footer className="actions">
         {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE ↗</a> : <button disabled>VIEW SITE ↗</button>}
-        <button onClick={() => void copyEmail()} disabled={!email}>COPY EMAIL</button>
+        <button onClick={() => void copyEmail()} disabled={!email || copyBlocked} title={copyBlocked ? `Fix copy first: ${copyIssues.join(", ")}` : undefined}>COPY EMAIL</button>
         <a href={zoho} target="_blank" rel="noreferrer">OPEN ZOHO ↗</a>
         <button className="reject" onClick={() => void onReject(item)} disabled={busy || Boolean(item.sentAt) || item.status.toLowerCase() === "rejected"}>
           REJECT

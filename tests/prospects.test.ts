@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inView, normalizePayload } from "../lib/normalizeProspects";
+import { inView, normalizePayload, outreachQualityIssues } from "../lib/normalizeProspects";
 
 test("normalizes and merges V10 OUTREACH with OPPORTUNITIES", () => {
   const data = normalizePayload({
@@ -36,4 +36,18 @@ test("recognizes sent and replied records", () => {
 test("rejected records never appear in SEND NOW", () => {
   const data = normalizePayload({ OUTREACH: [{ "Opportunity ID": "V9-O999", Company: "Too Complex", Status: "REJECTED" }] });
   assert.equal(data.counts["send-now"], 0);
+});
+
+test("flags agency jargon in prospect-facing outreach", () => {
+  const jargon = outreachQualityIssues({
+    subjectLine: "A quick idea",
+    outreachDraft: "I can send a first-scroll + proof map for the new site.",
+  });
+  assert.deepEqual(jargon, ["first-scroll", "proof map"]);
+
+  const clear = outreachQualityIssues({
+    subjectLine: "Your new site",
+    outreachDraft: "If useful, I can sketch a homepage layout showing the services, project examples, and contact info.",
+  });
+  assert.deepEqual(clear, []);
 });
