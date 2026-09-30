@@ -38,22 +38,16 @@ async function parseResponse(response: Response, secret: string): Promise<unknow
 function endpoint(action: string) {
   const { url, secret } = configuration();
   const target = assertAppsScriptUrl(url);
-  target.searchParams.set("secret", secret);
-  target.searchParams.set("token", secret);
-  target.searchParams.set("key", secret);
-  target.searchParams.set("apiKey", secret);
+  // Only GET needs the legacy query credential; all writes authenticate via POST body.
+  if (action === "list") target.searchParams.set("secret", secret);
   target.searchParams.set("action", action);
   target.searchParams.set("version", "V10");
   return { target, secret };
 }
 
-function secretHeaders(secret: string): HeadersInit {
-  return { Authorization: `Bearer ${secret}`, "x-api-secret": secret, "x-api-key": secret };
-}
-
 async function readRawProspects(): Promise<unknown> {
   const { target, secret } = endpoint("list");
-  const response = await fetchAppsScriptResponse(target, { method: "GET", headers: secretHeaders(secret) });
+  const response = await fetchAppsScriptResponse(target, { method: "GET" });
   return parseResponse(response, secret);
 }
 
@@ -77,16 +71,21 @@ export async function diagnoseProspectPayload(): Promise<unknown> {
 }
 
 async function mutateProspect(action: "MARK_SENT" | "REJECT", id: string, reason = ""): Promise<ProspectData> {
+  // A direct API caller must never bypass the dashboard's joined-record send gate.
+  if (action === "MARK_SENT") {
+    const before = await readProspects();
+    const item = before.prospects.find((candidate) => candidate.id === id && candidate.source === "OUTREACH");
+    if (!item?.readyValidated) {
+      throw new Error("This prospect is not fully READY in both source records. Refresh and review before marking SENT.");
+    }
+  }
   const endpointAction = action === "MARK_SENT" ? "markSent" : "reject";
   const { target, secret } = endpoint(endpointAction);
   const response = await fetchAppsScriptResponse(target, {
     method: "POST",
-    headers: { ...secretHeaders(secret), "Content-Type": "text/plain;charset=utf-8" },
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({
       secret,
-      token: secret,
-      key: secret,
-      apiKey: secret,
       action,
       opportunityId: id,
       id,
@@ -123,8 +122,8 @@ export async function reconcileSentProspects(): Promise<ProspectData> {
   const { target, secret } = endpoint("syncSent");
   const response = await fetchAppsScriptResponse(target, {
     method: "POST",
-    headers: { ...secretHeaders(secret), "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ secret, token: secret, key: secret, apiKey: secret, action: "SYNC_SENT" }),
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ secret, action: "SYNC_SENT" }),
   });
   const result = await parseResponse(response, secret) as { ok?: boolean; unmatched?: number; missingTimestamps?: number };
   if ((result.unmatched ?? 0) > 0 || (result.missingTimestamps ?? 0) > 0) {
