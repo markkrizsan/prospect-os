@@ -31,11 +31,11 @@ export async function fetchAppsScriptResponse(
   // Google redirects ContentService responses to a signed URL. The redirect may
   // initially return 404 due to propagation. GET the SAME URL again, never
   // resubmit a POST that may already have changed the Sheet.
-  let content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store" });
+  let content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store", signal: init.signal });
   for (const delay of [1800, 2500]) {
     if (content.status !== 404) break;
     await pause(delay);
-    content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store" });
+    content = await fetcher(contentUrl, { method: "GET", redirect: "manual", cache: "no-store", signal: init.signal });
   }
   if (content.status === 404) {
     throw new Error(
@@ -46,6 +46,50 @@ export async function fetchAppsScriptResponse(
     throw new Error("The Apps Script content response redirected unexpectedly. Verify web-app permissions.");
   }
   return content;
+}
+
+const RETRYABLE_READ_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function retryableReadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /fetch failed|network|timeout|timed out|abort|operation MAY have completed/i.test(message);
+}
+
+/**
+ * Dashboard reads are idempotent, so transient upstream failures may safely replay the
+ * original GET. Mutations continue to use fetchAppsScriptResponse directly and are
+ * never replayed.
+ */
+export async function fetchAppsScriptReadResponse(
+  target: URL,
+  init: RequestInit = { method: "GET" },
+  fetcher: typeof fetch = fetch,
+  pause: (milliseconds: number) => Promise<void> = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  attempts = 3,
+): Promise<Response> {
+  if ((init.method ?? "GET").toUpperCase() !== "GET") {
+    throw new Error("Read retry transport accepts GET only; mutations must never be replayed.");
+  }
+  let lastError: unknown = null;
+  let lastResponse: Response | null = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const attemptInit: RequestInit = {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(15_000),
+    };
+    try {
+      const response = await fetchAppsScriptResponse(target, attemptInit, fetcher, pause);
+      lastResponse = response;
+      if (!RETRYABLE_READ_STATUS.has(response.status) || attempt === attempts - 1) return response;
+    } catch (error) {
+      lastError = error;
+      if (!retryableReadError(error) || attempt === attempts - 1) throw error;
+    }
+    await pause(attempt === 0 ? 350 : 900);
+  }
+  if (lastResponse) return lastResponse;
+  throw lastError instanceof Error ? lastError : new Error("Apps Script read failed after retries.");
 }
 
 export function assertAppsScriptUrl(raw: string): URL {

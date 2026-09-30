@@ -2,7 +2,7 @@ import "server-only";
 
 import { inView, normalizePayload } from "@/lib/normalizeProspects";
 import type { ProspectData } from "@/lib/types";
-import { assertAppsScriptUrl, fetchAppsScriptResponse } from "@/lib/appsScriptTransport";
+import { assertAppsScriptUrl, fetchAppsScriptReadResponse, fetchAppsScriptResponse } from "@/lib/appsScriptTransport";
 
 function configuration() {
   const url = process.env.PROSPECT_API_URL;
@@ -47,7 +47,7 @@ function endpoint(action: string) {
 
 async function readRawProspects(): Promise<unknown> {
   const { target, secret } = endpoint("list");
-  const response = await fetchAppsScriptResponse(target, { method: "GET" });
+  const response = await fetchAppsScriptReadResponse(target, { method: "GET" });
   return parseResponse(response, secret);
 }
 

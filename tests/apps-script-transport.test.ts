@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertAppsScriptUrl, fetchAppsScriptResponse } from "../lib/appsScriptTransport";
+import { assertAppsScriptUrl, fetchAppsScriptReadResponse, fetchAppsScriptResponse } from "../lib/appsScriptTransport";
 
 const deployment = new URL("https://script.google.com/macros/s/DEPLOYMENT_TEST/exec");
 const contentUrl = "https://script.googleusercontent.com/macros/echo?user_content_key=SIGNED_TEST";
@@ -68,6 +68,47 @@ test("a plain JSON response needs no redirect or retry", async () => {
   const fetcher: typeof fetch = async () => Response.json({ ok: true, data: { MARKET: [] } });
   const result = await fetchAppsScriptResponse(deployment, { method: "GET" }, fetcher, async () => {});
   assert.deepEqual(await result.json(), { ok: true, data: { MARKET: [] } });
+});
+
+test("read-only transport retries transient original GET failures but never a permanent 404", async () => {
+  const statuses = [503, 502, 200];
+  const calls: string[] = [];
+  const sleeps: number[] = [];
+  const fetcher: typeof fetch = async (_url, init) => {
+    calls.push(init?.method || "GET");
+    const status = statuses.shift() ?? 200;
+    return status === 200 ? Response.json({ ok: true, data: { MARKET: [] } }) : new Response("temporary", { status });
+  };
+  const result = await fetchAppsScriptReadResponse(
+    deployment,
+    { method: "GET" },
+    fetcher,
+    async (ms) => { sleeps.push(ms); },
+  );
+  assert.equal(result.status, 200);
+  assert.deepEqual(calls, ["GET", "GET", "GET"]);
+  assert.deepEqual(sleeps, [350, 900]);
+
+  const permanentCalls: string[] = [];
+  const permanent404: typeof fetch = async (_url, init) => {
+    permanentCalls.push(init?.method || "GET");
+    return new Response("Not Found", { status: 404 });
+  };
+  const permanent = await fetchAppsScriptReadResponse(
+    deployment,
+    { method: "GET" },
+    permanent404,
+    async () => {},
+  );
+  assert.equal(permanent.status, 404);
+  assert.deepEqual(permanentCalls, ["GET"]);
+});
+
+test("read retry helper refuses POST so mutations cannot accidentally replay", async () => {
+  await assert.rejects(
+    fetchAppsScriptReadResponse(deployment, { method: "POST" }, async () => Response.json({ ok: true }), async () => {}),
+    /GET only/,
+  );
 });
 
 test("validate the exact deployed /exec shape without leaking configuration", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { composeOutboundPacket, extractRecipientEmail, inView, outreachCopyIssues } from "@/lib/normalizeProspects";
 import type { Prospect, ProspectData, ProspectView } from "@/lib/types";
 import { classifyRunHealth } from "@/lib/runHealth";
@@ -301,6 +301,7 @@ export default function Dashboard() {
   const [view, setView] = useState<ProspectView>("send-now");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState("");
@@ -308,45 +309,73 @@ export default function Dashboard() {
   const [dashboardKey, setDashboardKey] = useState("");
   const [focusIndex, setFocusIndex] = useState(0);
   const [reconciling, setReconciling] = useState(false);
+  const syncInFlight = useRef(false);
 
   const request = useCallback(async (options?: RequestInit): Promise<ProspectData> => {
-    const response = await fetch("/api/prospects", {
-      ...options,
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        "x-dashboard-key": sessionStorage.getItem("prospect-os-key") ?? "",
-      },
-    });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20_000);
+    try {
+      const response = await fetch("/api/prospects", {
+        ...options,
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "x-dashboard-key": sessionStorage.getItem("prospect-os-key") ?? "",
+        },
+      });
 
-    if (response.status === 401) {
-      setLocked(true);
-      throw new Error("Dashboard key required");
+      if (response.status === 401) {
+        setLocked(true);
+        throw new Error("Dashboard key required");
+      }
+
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Sheet sync failed");
+      return body as ProspectData;
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") {
+        throw new Error("Dashboard sync timed out; last verified data remains visible.");
+      }
+      throw cause;
+    } finally {
+      window.clearTimeout(timeout);
     }
-
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "Sheet sync failed");
-    return body as ProspectData;
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
+  const load = useCallback(async (initial = false) => {
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
+    if (initial) setLoading(true);
+    else setRefreshing(true);
     try {
-      setData(await request());
+      const next = await request();
+      setData(next);
       setLocked(false);
+      setError("");
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Sheet sync failed";
       if (message !== "Dashboard key required") setError(message);
     } finally {
-      setLoading(false);
+      syncInFlight.current = false;
+      if (initial) setLoading(false);
+      setRefreshing(false);
     }
   }, [request]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(true); }, [load]);
   useEffect(() => {
-    const interval = window.setInterval(() => { void load(); }, 5 * 60 * 1000);
-    return () => window.clearInterval(interval);
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void load(false);
+    };
+    const interval = window.setInterval(refreshIfVisible, 60_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
   }, [load]);
   useEffect(() => {
     if (!notice) return;
@@ -422,7 +451,7 @@ export default function Dashboard() {
   async function unlock(event: React.FormEvent) {
     event.preventDefault();
     sessionStorage.setItem("prospect-os-key", dashboardKey);
-    await load();
+    await load(true);
   }
 
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
@@ -469,8 +498,8 @@ export default function Dashboard() {
           <span className="sr-only">Search prospects</span>
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SEARCH /" />
         </label>
-        <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || loading}>{reconciling ? "REPAIRING…" : "REPAIR FOLLOW-UPS ↻"}</button>
-        <button className="refresh" onClick={() => void load()} disabled={loading || reconciling}>{loading ? "SYNCING…" : "REFRESH ↻"}</button>
+        <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || loading || refreshing}>{reconciling ? "REPAIRING…" : "REPAIR FOLLOW-UPS ↻"}</button>
+        <button className="refresh" onClick={() => void load(false)} disabled={loading || refreshing || reconciling}>{loading || refreshing ? "SYNCING…" : "REFRESH ↻"}</button>
       </nav>
 
       <section className="run-strip" aria-label="Last hourly production run">
@@ -489,9 +518,9 @@ export default function Dashboard() {
               Review the matching IDs in OPPORTUNITIES and OUTREACH before preparing new outreach.</span>
           </div>
         )}
-        {error && <div className="error" role="alert"><strong>SYSTEM</strong><span>{error}</span></div>}
+        {error && <div className="error" role="alert"><strong>{data ? "SYNC WARNING" : "SYSTEM"}</strong><span>{error}</span></div>}
 
-        {view === "send-now" && !loading && !error && records.length > 0 && (
+        {view === "send-now" && !loading && data && records.length > 0 && (
           <SendFocus
             item={records[focusIndex]}
             index={focusIndex}
@@ -505,7 +534,7 @@ export default function Dashboard() {
           />
         )}
 
-        {view === "send-now" && !loading && !error && records.length === 0 && (
+        {view === "send-now" && !loading && data && records.length === 0 && (
           <section className="empty-focus">
             <span>00</span>
             <h2>QUEUE<br />EMPTY</h2>
@@ -521,7 +550,7 @@ export default function Dashboard() {
               <div><span>LAST SYNC</span><strong>{data?.syncedAt ? new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}</strong></div>
             </div>
 
-            {!loading && !error && records.length === 0 && (
+            {!loading && data && records.length === 0 && (
               <section className="empty"><span>00</span><h2>NO RECORDS<br />IN THIS VIEW</h2></section>
             )}
 
@@ -539,7 +568,7 @@ export default function Dashboard() {
       <footer className="system-footer">
         <span>GOOGLE SHEETS / SINGLE SOURCE OF TRUTH</span>
         <span>← → NAVIGATE / C COPY ALL / Z MAIL / V SITE</span>
-        <span>V10 / EXECUTION INTERFACE</span>
+        <span>{refreshing ? "SYNCING LIVE DATA…" : data?.syncedAt ? `SYNCED ${new Date(data.syncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "NOT YET SYNCED"}</span>
       </footer>
 
       <div className="sr-only" aria-live="polite">{notice}</div>
