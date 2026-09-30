@@ -18,6 +18,7 @@ class FakeSheet {
       Array.from({ length: width }, (_, j) => sheet.rows[row - 1 + i]?.[column - 1 + j] ?? ""));
     return {
       getDisplayValues() { return data().map((r) => r.map((x) => x instanceof Date ? x.toISOString().slice(0, 10) : String(x))); },
+      getValues() { return data(); },
       getValue() { return sheet.rows[row - 1]?.[column - 1] ?? ""; },
       getDisplayValue() {
         const x = sheet.rows[row - 1]?.[column - 1] ?? "";
@@ -178,4 +179,10 @@ test("REJECT cannot retroactively turn a sent record into rejected", () => {
   const f = fixture({ status: "SENT", sentAt: "9/30/2026" });
   assert.throws(() => f.run("reject_", "V10-O038", "WEAK VALUE GAP"), /SENT prospect/);
   assert.equal(f.sheets.OUTREACH.record("V10-O038")?.Status, "SENT");
+});
+
+test("text-only sent dates preserve calendar day for America/Los_Angeles", () => {
+  const f = fixture({ status: "SENT", sentAt: "9/30/2026" });
+  f.run("syncSent_");
+  assert.equal(f.sheets.OUTREACH.record("V10-O038")?.["Follow-up Due"], "2026-10-06");
 });
