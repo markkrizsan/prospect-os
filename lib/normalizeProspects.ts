@@ -159,10 +159,9 @@ function joinOperational(
     else combined.status = outreach?.status || opportunity?.status || "";
     if (combined.status === "SENT" && !combined.sentAt) entryIssues.push("SENT without timestamp");
 
-    const wantsReady = Boolean(
-      (opportunity && isReadyState(opportunity.status)) ||
-      (outreach && isReadyState(outreach.status)),
-    );
+    // OUTREACH is the lifecycle owner: a legacy OPPORTUNITIES READY label
+    // is not a current send request when OUTREACH is deliberately RE-AUDIT/HOLD.
+    const wantsReady = Boolean(outreach && isReadyState(outreach.status));
     const readyGate = Boolean(
       opportunity && outreach && group.opportunity.length === 1 && group.outreach.length === 1 &&
       isV10(combined) &&
