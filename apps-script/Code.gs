@@ -443,8 +443,8 @@ function installProspectMaterializerTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (trigger) {
     if (trigger.getHandlerFunction() === handler) ScriptApp.deleteTrigger(trigger);
   });
-  ScriptApp.newTrigger(handler).timeBased().everyMinutes(15).create();
-  return { ok: true, handler: handler, cadenceMinutes: 15 };
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(5).create();
+  return { ok: true, handler: handler, cadenceMinutes: 5 };
 }
 
 function materializeQualified_() {
@@ -467,8 +467,11 @@ function materializeQualified_() {
   const reasonColumn = requiredColumn_(marketHeaders, "Reason") - 1;
   const signalColumn = requiredColumn_(marketHeaders, "Signal Strength") - 1;
   const checkedColumn = requiredColumn_(marketHeaders, "Last Checked") - 1;
-  const stats = { ok: true, checked: 0, materialized: 0, noOwnedEmail: 0, rebuildConflict: 0, alreadyMaterialized: 0, failures: [] };
-  const limit = 5;
+  const stats = { ok: true, checked: 0, materialized: 0, noOwnedEmail: 0, rebuildConflict: 0, alreadyMaterialized: 0, failures: [], timeBudgetHit: false };
+  // Output-bound, not attempt-bound: keep advancing through terminal failures until
+  // five READY pairs are created or the Apps Script execution budget is nearly spent.
+  const readyTarget = 5;
+  const deadlineMs = Date.now() + (4.5 * 60 * 1000);
 
   const candidates = [];
   for (let index = 1; index < values.length; index += 1) {
@@ -479,7 +482,8 @@ function materializeQualified_() {
   }
   candidates.sort(function (a, b) { return a.rank - b.rank || a.index - b.index; });
 
-  for (let candidateIndex = 0; candidateIndex < candidates.length && stats.checked < limit; candidateIndex += 1) {
+  for (let candidateIndex = 0; candidateIndex < candidates.length && stats.materialized < readyTarget; candidateIndex += 1) {
+    if (Date.now() >= deadlineMs) { stats.timeBudgetHit = true; break; }
     const index = candidates[candidateIndex].index;
     const row = candidates[candidateIndex].row;
     stats.checked += 1;
@@ -509,8 +513,9 @@ function materializeQualified_() {
     }
     if (!emailEvidence.email) {
       stats.noOwnedEmail += 1;
+      setByHeader_(market, index + 1, marketHeaders, "Screen", "REJECT — NO VERIFIED CHANNEL");
       setByHeader_(market, index + 1, marketHeaders, "Last Checked", todayInSheet_(spreadsheet));
-      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materializer found no public email on the owned pages checked; remains QUALIFIED — MATERIALIZE for later contact resolution.");
+      appendByHeader_(market, index + 1, marketHeaders, "Reason", "Materializer bounded first-party check found no verified usable email channel; terminalized so this row cannot starve newer qualified inventory.");
       continue;
     }
 
