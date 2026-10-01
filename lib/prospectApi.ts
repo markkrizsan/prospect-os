@@ -1,9 +1,10 @@
 import "server-only";
 
-import { inView, normalizePayload } from "@/lib/normalizeProspects";
+import { extractRecipientEmail, inView, normalizePayload, outreachCopyIssues } from "@/lib/normalizeProspects";
 import type { ProspectData } from "@/lib/types";
 import { unstable_cache } from "next/cache";
 import { assertAppsScriptUrl, fetchAppsScriptReadResponse, fetchAppsScriptResponse } from "@/lib/appsScriptTransport";
+import { createZohoDraft } from "@/lib/zohoMail";
 
 function configuration() {
   const url = process.env.PROSPECT_API_URL;
@@ -212,4 +213,45 @@ export async function recordProspectOutcome(id: string, outcome: string, amount?
   });
   await parseResponse(response, secret);
   return readProspects();
+}
+
+
+/**
+ * Creates a Zoho Mail draft from the current canonical READY record.
+ * This never marks the prospect SENT and never sends email.
+ */
+export async function createProspectZohoDraft(id: string): Promise<{
+  ok: true;
+  id: string;
+  company: string;
+  draftId: string;
+}> {
+  const data = await readProspects();
+  const item = data.prospects.find(
+    (candidate) => candidate.id === id && candidate.source === "OUTREACH"
+  );
+  if (!item?.readyValidated || item.sentAt) {
+    throw new Error("This prospect is no longer strict READY. Refresh before creating a Zoho draft.");
+  }
+
+  const issues = outreachCopyIssues(item);
+  if (issues.length) {
+    throw new Error(`Zoho draft blocked: ${issues.join(", ")}.`);
+  }
+
+  const recipient = extractRecipientEmail(item.contactPath);
+  if (!recipient) throw new Error("Zoho draft blocked: verified recipient email missing.");
+
+  const result = await createZohoDraft({
+    toAddress: recipient,
+    subject: item.subjectLine,
+    bodyText: item.outreachDraft,
+  });
+
+  return {
+    ok: true,
+    id: item.id,
+    company: item.company,
+    draftId: result.draftId,
+  };
 }
