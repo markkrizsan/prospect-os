@@ -86,7 +86,10 @@ function SendFocus({
   onPrev,
   onMarkSent,
   onReject,
+  onCreateDraft,
   onNotice,
+  drafting,
+  drafted,
 }: {
   item: Prospect;
   index: number;
@@ -96,7 +99,10 @@ function SendFocus({
   onPrev: () => void;
   onMarkSent: (item: Prospect) => Promise<void>;
   onReject: (item: Prospect) => Promise<void>;
+  onCreateDraft: (item: Prospect) => Promise<void>;
   onNotice: (message: string) => void;
+  drafting: boolean;
+  drafted: boolean;
 }) {
   const site = cleanUrl(item.website);
   const recipient = extractRecipientEmail(item.contactPath);
@@ -117,12 +123,13 @@ function SendFocus({
       if (event.key === "ArrowRight") onNext();
       if (event.key === "ArrowLeft") onPrev();
       if (event.key.toLowerCase() === "c") void copyEmail();
+      if (event.key.toLowerCase() === "d" && !copyBlocked && !drafting && !drafted) void onCreateDraft(item);
       if (event.key.toLowerCase() === "z") window.open("https://mail.zoho.com/", "_blank", "noopener,noreferrer");
       if (event.key.toLowerCase() === "v" && site) window.open(site, "_blank", "noopener,noreferrer");
     }
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [copyEmail, onNext, onPrev, site]);
+  }, [copyBlocked, copyEmail, drafted, drafting, item, onCreateDraft, onNext, onPrev, site]);
 
   return (
     <article className="focus-card">
@@ -207,6 +214,13 @@ function SendFocus({
 
         <div className="compose-actions">
           <button onClick={() => void copyEmail()} disabled={!email || copyBlocked}>COPY ALL <kbd>C</kbd></button>
+          <button
+            className={`zoho-draft ${drafted ? "drafted" : ""}`}
+            onClick={() => void onCreateDraft(item)}
+            disabled={copyBlocked || drafting || drafted}
+          >
+            {drafting ? "CREATING DRAFT…" : drafted ? "DRAFT READY ✓" : "CREATE ZOHO DRAFT"} <kbd>D</kbd>
+          </button>
           <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO <kbd>Z</kbd></a>
           {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE <kbd>V</kbd></a> : <button disabled>VIEW SITE</button>}
           <button className="reject" onClick={() => void onReject(item)} disabled={busy}>REJECT</button>
@@ -218,6 +232,7 @@ function SendFocus({
         <div className="keyboard-hint">
           <span>← →</span> MOVE QUEUE
           <span>C</span> COPY ALL
+          <span>D</span> DRAFT
           <span>Z</span> MAIL
           <span>V</span> SITE
         </div>
@@ -343,6 +358,8 @@ export default function Dashboard() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [reconciling, setReconciling] = useState(false);
   const [bulkMarking, setBulkMarking] = useState(false);
+  const [draftingId, setDraftingId] = useState("");
+  const [draftedIds, setDraftedIds] = useState<Set<string>>(() => new Set());
   const [stale, setStale] = useState(false);
   const syncInFlight = useRef(false);
   const dataRef = useRef<ProspectData | null>(null);
@@ -473,6 +490,45 @@ export default function Dashboard() {
     () => (data?.prospects ?? []).filter((item) => inView(item, "send-now")),
     [data],
   );
+
+
+  async function createDraft(item: Prospect) {
+    if (!item.readyValidated || item.sentAt || draftedIds.has(item.id)) return;
+    setDraftingId(item.id);
+    setError("");
+    try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 20_000);
+      try {
+        const response = await fetch("/api/zoho-draft", {
+          method: "POST",
+          cache: "no-store",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "x-dashboard-key": sessionStorage.getItem("prospect-os-key") ?? "",
+          },
+          body: JSON.stringify({ id: item.id }),
+        });
+        if (response.status === 401) {
+          setLocked(true);
+          throw new Error("Dashboard key required");
+        }
+        const body = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(body.error || "Zoho draft creation failed");
+      } finally {
+        window.clearTimeout(timeout);
+      }
+      setDraftedIds((current) => new Set(current).add(item.id));
+      setNotice(`${item.company || item.id}: Zoho draft created. Review it in Zoho, then send manually.`);
+    } catch (cause) {
+      setError(cause instanceof DOMException && cause.name === "AbortError"
+        ? "Zoho draft creation timed out. Check Zoho Drafts before retrying to avoid a duplicate."
+        : cause instanceof Error ? cause.message : "Zoho draft creation failed");
+    } finally {
+      setDraftingId("");
+    }
+  }
 
 
   async function markSent(item: Prospect) {
@@ -693,7 +749,10 @@ export default function Dashboard() {
             onPrev={() => setFocusIndex((current) => (current - 1 + records.length) % records.length)}
             onMarkSent={markSent}
             onReject={rejectProspect}
+            onCreateDraft={createDraft}
             onNotice={setNotice}
+            drafting={draftingId === records[focusIndex].id}
+            drafted={draftedIds.has(records[focusIndex].id)}
           />
         )}
 
