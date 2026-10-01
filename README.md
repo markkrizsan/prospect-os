@@ -110,8 +110,14 @@ Tool, connector, authorization, timeout, safety or runtime failures are recovery
 | PROSPECT_API_URL | Yes | Exact active Apps Script `/exec` URL |
 | PROSPECT_API_SECRET | Yes | Matches Apps Script Script Property |
 | DASHBOARD_KEY | Yes | Private dashboard access key |
+| WOODPECKER_API_KEY | For review bridge | Server-side Woodpecker API key |
+| WOODPECKER_MAILBOX_ID | For review bridge | Connected outbound SMTP mailbox ID |
+| OUTREACH_POSTAL_ADDRESS | For review bridge | Valid commercial-email postal address used in the footer |
+| WOODPECKER_TIMEZONE | Optional | Campaign timezone; defaults to America/Los_Angeles |
 
 Never expose these through `NEXT_PUBLIC_`.
+
+The outbound bridge is human-gated: Prospect OS can prepare a Woodpecker **DRAFT** review batch, but it intentionally cannot run the campaign or send email. See `docs/OUTBOUND_REVIEW_BRIDGE.md`.
 
 GitHub/Vercel deployment does **not** deploy Apps Script. Code changes to `apps-script/Code.gs` require a separate Apps Script deployment and live readback.
 
