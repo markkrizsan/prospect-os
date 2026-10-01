@@ -342,6 +342,7 @@ export default function Dashboard() {
   const [dashboardKey, setDashboardKey] = useState("");
   const [focusIndex, setFocusIndex] = useState(0);
   const [reconciling, setReconciling] = useState(false);
+  const [bulkMarking, setBulkMarking] = useState(false);
   const [stale, setStale] = useState(false);
   const syncInFlight = useRef(false);
   const dataRef = useRef<ProspectData | null>(null);
@@ -362,9 +363,9 @@ export default function Dashboard() {
     setStale(!Number.isFinite(nextTime) || Date.now() - nextTime > 90_000);
   }, []);
 
-  const request = useCallback(async (options?: RequestInit): Promise<ProspectData> => {
+  const request = useCallback(async (options?: RequestInit, timeoutMs = 18_000): Promise<ProspectData> => {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 18_000);
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch("/api/prospects", {
         ...options,
@@ -468,6 +469,12 @@ export default function Dashboard() {
     [data],
   );
 
+  const readyForBulk = useMemo(
+    () => (data?.prospects ?? []).filter((item) => inView(item, "send-now")),
+    [data],
+  );
+
+
   async function markSent(item: Prospect) {
     if (!window.confirm(`Mark ${item.company || item.id} as sent in the Google Sheet?`)) return;
     setBusyId(item.id);
@@ -480,6 +487,34 @@ export default function Dashboard() {
       setError(cause instanceof Error ? cause.message : "MARK SENT failed");
     } finally {
       setBusyId("");
+    }
+  }
+
+
+  async function markAllSent() {
+    const snapshot = readyForBulk;
+    if (!snapshot.length) return;
+    const confirmed = window.confirm(
+      `Confirm: I already sent all ${snapshot.length} current SEND NOW emails in Zoho.\n\n` +
+      `Prospect OS will mark exactly these ${snapshot.length} records SENT and schedule their follow-ups. ` +
+      "This button does NOT send any email.\n\nContinue?"
+    );
+    if (!confirmed) return;
+
+    setBulkMarking(true);
+    setError("");
+    try {
+      const next = await request({
+        method: "POST",
+        body: JSON.stringify({ action: "MARK_ALL_SENT", ids: snapshot.map((item) => item.id) }),
+      }, 55_000);
+      acceptVerifiedData(next);
+      setFocusIndex(0);
+      setNotice(`${snapshot.length} prospects confirmed SENT`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "MARK ALL SENT failed");
+    } finally {
+      setBulkMarking(false);
     }
   }
 
@@ -614,8 +649,17 @@ export default function Dashboard() {
           <span className="sr-only">Search prospects</span>
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SEARCH /" />
         </label>
-        <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || loading || refreshing}>{reconciling ? "REPAIRING…" : "REPAIR FOLLOW-UPS ↻"}</button>
-        <button className="refresh" onClick={() => void load(false)} disabled={loading || refreshing || reconciling}>{loading || refreshing ? "SYNCING…" : "REFRESH ↻"}</button>
+        {view === "send-now" && (
+          <button
+            className="refresh bulk-sent"
+            onClick={() => void markAllSent()}
+            disabled={bulkMarking || loading || refreshing || reconciling || readyForBulk.length === 0}
+          >
+            {bulkMarking ? "MARKING ALL SENT…" : `MARK ALL ${readyForBulk.length} SENT ✓`}
+          </button>
+        )}
+        <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || bulkMarking || loading || refreshing}>{reconciling ? "REPAIRING…" : "REPAIR FOLLOW-UPS ↻"}</button>
+        <button className="refresh" onClick={() => void load(false)} disabled={loading || refreshing || reconciling || bulkMarking}>{loading || refreshing ? "SYNCING…" : "REFRESH ↻"}</button>
       </nav>
 
       <section className="run-strip" aria-label="Last hourly production run">
