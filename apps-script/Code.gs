@@ -443,8 +443,8 @@ function installProspectMaterializerTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (trigger) {
     if (trigger.getHandlerFunction() === handler) ScriptApp.deleteTrigger(trigger);
   });
-  ScriptApp.newTrigger(handler).timeBased().everyMinutes(5).create();
-  return { ok: true, handler: handler, cadenceMinutes: 5 };
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(1).create();
+  return { ok: true, handler: handler, cadenceMinutes: 1 };
 }
 
 function materializeQualified_() {
