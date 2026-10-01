@@ -1,33 +1,16 @@
-# Apply Prospect OS V10.1
+# ARCHIVE — Prospect OS V10.1 Patch Instructions
 
-This bundle contains only the files changed by the V10.1 surgical patch.
+**SUPERSEDED. DO NOT USE AS CURRENT OPERATING OR DEPLOYMENT INSTRUCTIONS.**
 
-From Terminal:
+This file documents an earlier V10.1 surgical patch and is preserved only for repository history.
 
-```bash
-cd "/Users/markkrizsan/Documents/ChatGPT/Prospect OS"
-```
+Current authority:
+1. live Sheet `OPERATING_CONTRACT`
+2. synchronized `PLAYBOOK`
+3. **Conversation Engine V10 — Current Operating System**
+4. current repository `README.md`
+5. `apps-script/README.md` for the separately deployed Apps Script runtime
 
-Copy/overwrite this bundle's contents into that folder, preserving the folder structure, then run:
+Current production invariant: every scheduled hourly Revenue Engine run owes FIVE NEW unique strict SEND NOW prospects regardless of starting READY inventory. Never use this archived patch note to restore old buffer thresholds, attempt quotas, TODAY ownership, old materializer behavior or old deployment assumptions.
 
-```bash
-npm test
-npm run typecheck
-npm run build
-
-git add .
-git commit -m "Patch Prospect OS V10 execution flow"
-git push
-```
-
-Because Vercel is connected to `main`, the push should deploy automatically.
-
-Then repair/redeploy the Apps Script using `apps-script/README.md`.
-
-Expected production changes:
-
-- OPEN ZOHO opens `https://mail.zoho.com/`.
-- The UI reads the real V10 Sheet headers instead of showing false `Not recorded` values.
-- Legacy `V9-*` database IDs are de-emphasized; the card reads V10.
-- A REJECT action records a reason and removes bad-fit prospects from SEND NOW.
-- MARK SENT and REJECT re-read the Google Sheet and only report success after confirmation.
+Historical patch instructions below are intentionally retired.
