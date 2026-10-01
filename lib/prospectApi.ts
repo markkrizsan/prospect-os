@@ -130,6 +130,57 @@ export async function markProspectSent(id: string): Promise<ProspectData> {
   return mutateProspect("MARK_SENT", id);
 }
 
+
+/**
+ * Marks an explicit snapshot of already-sent READY records as SENT.
+ * The caller supplies exact IDs so READY records materialized after confirmation
+ * are never swept into the batch accidentally.
+ */
+export async function markProspectsSent(ids: string[]): Promise<ProspectData> {
+  const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (!uniqueIds.length) throw new Error("No READY records were selected");
+  if (uniqueIds.length > 50) throw new Error("Bulk SENT confirmation is limited to 50 records at a time");
+
+  const before = await readProspects();
+  const operational = new Map(
+    before.prospects
+      .filter((item) => item.source === "OUTREACH")
+      .map((item) => [item.id, item]),
+  );
+  const invalid = uniqueIds.filter((id) => !operational.get(id)?.readyValidated);
+  if (invalid.length) {
+    throw new Error(`Bulk SENT stopped before writing: ${invalid.join(", ")} is no longer strict READY. Refresh and review.`);
+  }
+
+  const sentAt = new Date().toISOString();
+  for (const id of uniqueIds) {
+    const { target, secret } = endpoint("markSent");
+    const response = await fetchAppsScriptResponse(target, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        secret,
+        action: "MARK_SENT",
+        opportunityId: id,
+        id,
+        status: "SENT",
+        sentAt,
+      }),
+    });
+    await parseResponse(response, secret);
+  }
+
+  const data = await readProspects();
+  const unconfirmed = uniqueIds.filter((id) => {
+    const item = data.prospects.find((candidate) => candidate.id === id);
+    return !item || !inView(item, "sent");
+  });
+  if (unconfirmed.length) {
+    throw new Error(`Bulk SENT wrote partially but could not confirm: ${unconfirmed.join(", ")}. Refresh before retrying; MARK_SENT is idempotent.`);
+  }
+  return data;
+}
+
 export async function rejectProspect(id: string, reason: string): Promise<ProspectData> {
   return mutateProspect("REJECT", id, reason);
 }
