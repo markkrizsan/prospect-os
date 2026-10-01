@@ -43,6 +43,15 @@ type MailboxContext = {
 let tokenCache: { value: string; expiresAt: number } | null = null;
 let mailboxCache: { value: MailboxContext; expiresAt: number } | null = null;
 
+export function zohoDraftConfigured(): boolean {
+  return Boolean(
+    process.env.ZOHO_CLIENT_ID?.trim() &&
+    process.env.ZOHO_CLIENT_SECRET?.trim() &&
+    process.env.ZOHO_REFRESH_TOKEN?.trim() &&
+    process.env.ZOHO_FROM_ADDRESS?.trim()
+  );
+}
+
 function configuration() {
   const clientId = process.env.ZOHO_CLIENT_ID?.trim();
   const clientSecret = process.env.ZOHO_CLIENT_SECRET?.trim();
