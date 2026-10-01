@@ -23,7 +23,7 @@ Apps Script does **not** discover prospects, decide initial qualification, guess
 
 ## Materializer contract
 
-`installProspectMaterializerTrigger()` removes duplicate triggers for the handler and installs one time-driven `runQualifiedMaterializer` trigger every **5 minutes**.
+`installProspectMaterializerTrigger()` removes duplicate triggers for the handler and installs one time-driven `runQualifiedMaterializer` trigger every **1 minute**.
 
 Each execution is **output-bound**:
 - target = five successful materializations
@@ -81,7 +81,7 @@ After a `Code.gs` change:
 5. Deploy → Manage deployments → edit the existing Web app → create a new version.
 6. Preserve the existing execution/access settings and production `/exec` endpoint when possible.
 7. Run `installProspectMaterializerTrigger` once if the deployed trigger logic/cadence changed or trigger state must be repaired.
-8. Verify exactly one `runQualifiedMaterializer` time-driven trigger exists and is scheduled every 5 minutes.
+8. Verify exactly one `runQualifiedMaterializer` time-driven trigger exists and is scheduled every 1 minute.
 9. Verify live Sheet evidence: terminal failures advance, a legitimate staged row produces one complete matching V10 READY pair, readback passes, MARKET promotes, and no email is sent.
 
 Do not create multiple materializer triggers.
