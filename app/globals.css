@@ -137,6 +137,9 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 .view-nav input::placeholder{color:#716d66}
 .view-nav .refresh{background:var(--paper-hi);color:var(--black)}
 .view-nav .refresh:hover{background:white}
+.view-nav .bulk-sent{background:var(--red);color:white}
+.view-nav .bulk-sent:hover{background:#ff473b}
+.view-nav .bulk-sent:disabled{opacity:.45}
 
 .run-strip{display:flex;gap:0;flex-wrap:wrap;background:#171513;color:#f7f1e8;border-bottom:1px solid #39332d}
 .run-strip>div{min-width:150px;flex:1;padding:10px 14px;border-right:1px solid #39332d}
