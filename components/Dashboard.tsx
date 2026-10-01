@@ -90,6 +90,7 @@ function SendFocus({
   onNotice,
   drafting,
   drafted,
+  draftEnabled,
 }: {
   item: Prospect;
   index: number;
@@ -103,6 +104,7 @@ function SendFocus({
   onNotice: (message: string) => void;
   drafting: boolean;
   drafted: boolean;
+  draftEnabled: boolean;
 }) {
   const site = cleanUrl(item.website);
   const recipient = extractRecipientEmail(item.contactPath);
@@ -123,13 +125,13 @@ function SendFocus({
       if (event.key === "ArrowRight") onNext();
       if (event.key === "ArrowLeft") onPrev();
       if (event.key.toLowerCase() === "c") void copyEmail();
-      if (event.key.toLowerCase() === "d" && !copyBlocked && !drafting && !drafted) void onCreateDraft(item);
+      if (event.key.toLowerCase() === "d" && draftEnabled && !copyBlocked && !drafting && !drafted) void onCreateDraft(item);
       if (event.key.toLowerCase() === "z") window.open("https://mail.zoho.com/", "_blank", "noopener,noreferrer");
       if (event.key.toLowerCase() === "v" && site) window.open(site, "_blank", "noopener,noreferrer");
     }
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [copyBlocked, copyEmail, drafted, drafting, item, onCreateDraft, onNext, onPrev, site]);
+  }, [copyBlocked, copyEmail, draftEnabled, drafted, drafting, item, onCreateDraft, onNext, onPrev, site]);
 
   return (
     <article className="focus-card">
@@ -217,9 +219,9 @@ function SendFocus({
           <button
             className={`zoho-draft ${drafted ? "drafted" : ""}`}
             onClick={() => void onCreateDraft(item)}
-            disabled={copyBlocked || drafting || drafted}
+            disabled={!draftEnabled || copyBlocked || drafting || drafted}
           >
-            {drafting ? "CREATING DRAFT…" : drafted ? "DRAFT READY ✓" : "CREATE ZOHO DRAFT"} <kbd>D</kbd>
+            {!draftEnabled ? "ZOHO NOT CONNECTED" : drafting ? "CREATING DRAFT…" : drafted ? "DRAFT READY ✓" : "CREATE ZOHO DRAFT"} <kbd>D</kbd>
           </button>
           <a href="https://mail.zoho.com/" target="_blank" rel="noreferrer">OPEN ZOHO <kbd>Z</kbd></a>
           {site ? <a href={site} target="_blank" rel="noreferrer">VIEW SITE <kbd>V</kbd></a> : <button disabled>VIEW SITE</button>}
@@ -657,6 +659,7 @@ export default function Dashboard() {
   }
 
   const activeView = VIEWS.find((item) => item.id === view)?.label ?? "SEND NOW";
+  const zohoDraftEnabled = data?.capabilities?.includes("ZOHO_DRAFT") ?? false;
   const readyCount = data?.counts["send-now"] ?? 0;
   const queueCount = data?.counts.queue ?? 0;
   const run = data?.latestRun;
@@ -753,6 +756,7 @@ export default function Dashboard() {
             onNotice={setNotice}
             drafting={draftingId === records[focusIndex].id}
             drafted={draftedIds.has(records[focusIndex].id)}
+            draftEnabled={zohoDraftEnabled}
           />
         )}
 
