@@ -1,5 +1,7 @@
 import "server-only";
 
+import { absolutizeSignatureHtml, buildZohoDraftPayload } from "@/lib/zohoDraft";
+
 type ZohoTokenResponse = {
   access_token?: string;
   expires_in?: number;
@@ -144,25 +146,6 @@ function signatureIdFor(account: ZohoAccount, fromAddress: string, override: str
   return id && id.toLowerCase() !== "null" ? id : "";
 }
 
-export function absolutizeSignatureHtml(html: string, mailBase: string): string {
-  const base = mailBase.replace(/\/$/, "");
-  return html.replace(/\b(src|href)=(["'])\/(?!\/)/gi, (_match, attr: string, quote: string) =>
-    `${attr}=${quote}${base}/`
-  );
-}
-
-export function renderDraftHtml(bodyText: string, signatureHtml: string): string {
-  const escaped = bodyText
-    .trim()
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-    .replace(/\r?\n/g, "<br />");
-  return `<div>${escaped}</div><br /><br />${signatureHtml}`;
-}
-
 async function mailboxContext(): Promise<MailboxContext> {
   if (mailboxCache && mailboxCache.expiresAt > Date.now()) return mailboxCache.value;
   const { fromAddress, mailBase, signatureId: configuredSignatureId } = configuration();
@@ -212,16 +195,13 @@ export async function createZohoDraft(input: ZohoDraftInput): Promise<ZohoDraftR
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode: "draft",
+      body: JSON.stringify(buildZohoDraftPayload({
         fromAddress,
-        toAddress: input.toAddress.trim(),
-        subject: input.subject.trim(),
-        content: renderDraftHtml(input.bodyText, mailbox.signatureHtml),
-        mailFormat: "html",
-        askReceipt: "no",
-        encoding: "UTF-8",
-      }),
+        toAddress: input.toAddress,
+        subject: input.subject,
+        bodyText: input.bodyText,
+        signatureHtml: mailbox.signatureHtml,
+      })),
     }
   ) as ZohoEnvelope<Record<string, unknown>>;
 
