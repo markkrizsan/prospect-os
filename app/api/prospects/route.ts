@@ -1,5 +1,5 @@
 import { isAuthorized, unauthorized } from "@/lib/auth";
-import { diagnoseProspectPayload, markProspectSent, readProspectsCached, recordProspectOutcome, reconcileSentProspects, rejectProspect } from "@/lib/prospectApi";
+import { diagnoseProspectPayload, markProspectSent, markProspectsSent, readProspectsCached, recordProspectOutcome, reconcileSentProspects, rejectProspect } from "@/lib/prospectApi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,9 +26,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!isAuthorized(request)) return unauthorized();
   try {
-    const body = await request.json() as { action?: unknown; id?: unknown; reason?: unknown; outcome?: unknown; amount?: unknown; note?: unknown };
+    const body = await request.json() as { action?: unknown; id?: unknown; ids?: unknown; reason?: unknown; outcome?: unknown; amount?: unknown; note?: unknown };
     if (body.action === "SYNC_SENT") {
       return Response.json(await reconcileSentProspects(), { headers: { "Cache-Control": "private, no-store" } });
+    }
+    if (body.action === "MARK_ALL_SENT") {
+      if (!Array.isArray(body.ids) || !body.ids.length || body.ids.some((id) => typeof id !== "string" || !id.trim())) {
+        return Response.json({ error: "A non-empty list of READY record IDs is required" }, { status: 400 });
+      }
+      return Response.json(await markProspectsSent(body.ids as string[]), { headers: { "Cache-Control": "private, no-store" } });
     }
     if (typeof body.id !== "string" || !body.id.trim()) {
       return Response.json({ error: "A valid record ID is required" }, { status: 400 });
@@ -44,7 +50,7 @@ export async function POST(request: Request) {
       const note = typeof body.note === "string" ? body.note : "";
       return Response.json(await recordProspectOutcome(body.id.trim(), body.outcome, amount, note), { headers: { "Cache-Control": "private, no-store" } });
     }
-    return Response.json({ error: "A valid MARK_SENT, REJECT, RECORD_OUTCOME or SYNC_SENT action is required" }, { status: 400 });
+    return Response.json({ error: "A valid MARK_SENT, MARK_ALL_SENT, REJECT, RECORD_OUTCOME or SYNC_SENT action is required" }, { status: 400 });
   } catch (error) {
     return failure(error);
   }
