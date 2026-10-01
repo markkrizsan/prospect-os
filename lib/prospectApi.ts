@@ -1,9 +1,11 @@
 import "server-only";
 
-import { inView, normalizePayload } from "@/lib/normalizeProspects";
+import { extractRecipientEmail, inView, normalizePayload, outreachCopyIssues } from "@/lib/normalizeProspects";
 import type { ProspectData } from "@/lib/types";
 import { unstable_cache } from "next/cache";
 import { assertAppsScriptUrl, fetchAppsScriptReadResponse, fetchAppsScriptResponse } from "@/lib/appsScriptTransport";
+import { prepareWoodpeckerReviewBatch, woodpeckerReviewConfigured } from "@/lib/woodpecker";
+import type { ReviewProspect } from "@/lib/outboundReview";
 
 function configuration() {
   const url = process.env.PROSPECT_API_URL;
@@ -53,7 +55,11 @@ async function readRawProspects(): Promise<unknown> {
 }
 
 export async function readProspects(): Promise<ProspectData> {
-  return normalizePayload(await readRawProspects());
+  const data = normalizePayload(await readRawProspects());
+  if (woodpeckerReviewConfigured()) {
+    data.capabilities = [...new Set([...(data.capabilities ?? []), "OUTBOUND_REVIEW"])];
+  }
+  return data;
 }
 
 /**
@@ -212,4 +218,51 @@ export async function recordProspectOutcome(id: string, outcome: string, amount?
   });
   await parseResponse(response, secret);
   return readProspects();
+}
+
+
+/**
+ * Prepare an explicit human-review batch in Woodpecker.
+ * This never starts a campaign, never sends email, and never mutates Sheet lifecycle.
+ */
+export async function prepareProspectReviewBatch(ids: string[]): Promise<{
+  campaignId: number;
+  campaignName: string;
+  prospectCount: number;
+  status: "DRAFT";
+}> {
+  const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (!uniqueIds.length || uniqueIds.length > 10) {
+    throw new Error("Review batches require 1-10 unique READY IDs.");
+  }
+
+  const data = await readProspects();
+  const operational = new Map(
+    data.prospects
+      .filter((item) => item.source === "OUTREACH")
+      .map((item) => [item.id, item]),
+  );
+
+  const prospects: ReviewProspect[] = uniqueIds.map((id) => {
+    const item = operational.get(id);
+    if (!item?.readyValidated || item.sentAt) {
+      throw new Error(`${id} is no longer strict READY. Refresh before preparing a review batch.`);
+    }
+    const issues = outreachCopyIssues(item);
+    if (issues.length) {
+      throw new Error(`${id} failed outreach validation: ${issues.join(", ")}.`);
+    }
+    const email = extractRecipientEmail(item.contactPath);
+    if (!email) throw new Error(`${id} has no verified recipient email.`);
+    return {
+      id: item.id,
+      email,
+      company: item.company,
+      website: item.website,
+      subject: item.subjectLine,
+      bodyText: item.outreachDraft,
+    };
+  });
+
+  return prepareWoodpeckerReviewBatch(prospects);
 }

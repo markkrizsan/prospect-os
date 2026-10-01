@@ -136,6 +136,14 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 }
 .view-nav input::placeholder{color:#716d66}
 .view-nav .refresh{background:var(--paper-hi);color:var(--black)}
+.view-nav a.refresh{
+  min-height:46px;padding:0 15px;border-right:1px solid rgba(255,255,255,.12);
+  display:flex;align-items:center;text-decoration:none;
+  font:800 9px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  letter-spacing:.06em;
+}
+.view-nav .review-batch{background:#f3ede3;color:var(--black)}
+.view-nav .review-batch:disabled{opacity:.42}
 .view-nav .refresh:hover{background:white}
 .view-nav .bulk-sent{background:var(--red);color:white}
 .view-nav .bulk-sent:hover{background:#ff473b}

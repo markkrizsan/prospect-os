@@ -343,6 +343,8 @@ export default function Dashboard() {
   const [focusIndex, setFocusIndex] = useState(0);
   const [reconciling, setReconciling] = useState(false);
   const [bulkMarking, setBulkMarking] = useState(false);
+  const [preparingReview, setPreparingReview] = useState(false);
+  const [preparedReviewIds, setPreparedReviewIds] = useState<Set<string>>(() => new Set());
   const [stale, setStale] = useState(false);
   const syncInFlight = useRef(false);
   const dataRef = useRef<ProspectData | null>(null);
@@ -473,6 +475,63 @@ export default function Dashboard() {
     () => (data?.prospects ?? []).filter((item) => inView(item, "send-now")),
     [data],
   );
+
+  const outboundReviewEnabled = data?.capabilities?.includes("OUTBOUND_REVIEW") ?? false;
+  const reviewBatch = useMemo(
+    () => records.filter((item) => !preparedReviewIds.has(item.id)).slice(0, 5),
+    [records, preparedReviewIds],
+  );
+
+  async function prepareReviewBatch() {
+    if (!outboundReviewEnabled || !reviewBatch.length || preparingReview) return;
+    setPreparingReview(true);
+    setError("");
+    try {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 55_000);
+      try {
+        const response = await fetch("/api/outbound-review", {
+          method: "POST",
+          cache: "no-store",
+          signal: controller.signal,
+          headers: {
+            "Content-Type": "application/json",
+            "x-dashboard-key": sessionStorage.getItem("prospect-os-key") ?? "",
+          },
+          body: JSON.stringify({ ids: reviewBatch.map((item) => item.id) }),
+        });
+        if (response.status === 401) {
+          setLocked(true);
+          throw new Error("Dashboard key required");
+        }
+        const body = await response.json() as {
+          error?: string;
+          campaignName?: string;
+          prospectCount?: number;
+          status?: string;
+        };
+        if (!response.ok) throw new Error(body.error || "Review-batch preparation failed");
+        setPreparedReviewIds((current) => {
+          const next = new Set(current);
+          reviewBatch.forEach((item) => next.add(item.id));
+          return next;
+        });
+        setNotice(
+          `${body.prospectCount ?? reviewBatch.length} prospects prepared in Woodpecker as DRAFT. Review there, then press RUN yourself.`
+        );
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    } catch (cause) {
+      setError(
+        cause instanceof DOMException && cause.name === "AbortError"
+          ? "Review-batch preparation timed out. Check Woodpecker DRAFT campaigns before retrying."
+          : cause instanceof Error ? cause.message : "Review-batch preparation failed"
+      );
+    } finally {
+      setPreparingReview(false);
+    }
+  }
 
 
   async function markSent(item: Prospect) {
@@ -650,13 +709,39 @@ export default function Dashboard() {
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="SEARCH /" />
         </label>
         {view === "send-now" && (
-          <button
-            className="refresh bulk-sent"
-            onClick={() => void markAllSent()}
-            disabled={bulkMarking || loading || refreshing || reconciling || readyForBulk.length === 0}
-          >
-            {bulkMarking ? "MARKING ALL SENT…" : `MARK ALL ${readyForBulk.length} SENT ✓`}
-          </button>
+          <>
+            <button
+              className="refresh review-batch"
+              onClick={() => void prepareReviewBatch()}
+              disabled={
+                !outboundReviewEnabled ||
+                preparingReview ||
+                loading ||
+                refreshing ||
+                reconciling ||
+                reviewBatch.length === 0
+              }
+              title={outboundReviewEnabled ? "Creates a Woodpecker DRAFT only. Prospect OS never runs the campaign." : "Connect Woodpecker to enable review batches."}
+            >
+              {!outboundReviewEnabled
+                ? "OUTBOUND NOT CONNECTED"
+                : preparingReview
+                  ? "PREPARING REVIEW…"
+                  : `PREPARE NEXT ${reviewBatch.length} FOR REVIEW`}
+            </button>
+            {outboundReviewEnabled && (
+              <a className="refresh" href="https://app.woodpecker.co/" target="_blank" rel="noreferrer">
+                OPEN WOODPECKER ↗
+              </a>
+            )}
+            <button
+              className="refresh bulk-sent"
+              onClick={() => void markAllSent()}
+              disabled={bulkMarking || loading || refreshing || reconciling || readyForBulk.length === 0}
+            >
+              {bulkMarking ? "MARKING ALL SENT…" : `MARK ALL ${readyForBulk.length} SENT ✓`}
+            </button>
+          </>
         )}
         <button className="refresh" onClick={() => void reconcileSent()} disabled={reconciling || bulkMarking || loading || refreshing}>{reconciling ? "REPAIRING…" : "REPAIR FOLLOW-UPS ↻"}</button>
         <button className="refresh" onClick={() => void load(false)} disabled={loading || refreshing || reconciling || bulkMarking}>{loading || refreshing ? "SYNCING…" : "REFRESH ↻"}</button>
