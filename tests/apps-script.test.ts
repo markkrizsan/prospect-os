@@ -235,6 +235,21 @@ test("qualified materializer helpers allocate IDs and generate a human draft", (
   assert.match(draft, /annotated homepage pass/i);
 });
 
+test("evidence-led materializer draft removes internal framework jargon before outreach", () => {
+  const f = fixture();
+  const draft = f.run(
+    "draftForQualified_",
+    "Acme Services",
+    "The buyer path hides the proof layer and value gap",
+    "The digital representation understates the authority system",
+    "One micro-offer showing a first-scroll proof map.",
+  ) as unknown as string;
+  assert.doesNotMatch(draft, /buyer path|proof layer|value gap|digital representation|authority system|micro-offer|first-scroll|proof map/i);
+  assert.match(draft, /how customers move through the site/i);
+  assert.match(draft, /project proof/i);
+  assert.match(draft, /website gap/i);
+});
+
 test("materializer parses evidence-backed qualification signals without inventing HIGH scores", () => {
   const f = fixture();
   const reason = "PAIN=MEDIUM | TIMING=HIGH | ECONOMICS=HIGH | AUTHORITY=REALISTIC | SCOPE=PASS | INTENT=HIGH | CONFIDENCE=MEDIUM — evidence";
