@@ -115,6 +115,10 @@ Never expose these through `NEXT_PUBLIC_`.
 
 GitHub/Vercel deployment does **not** deploy Apps Script. Code changes to `apps-script/Code.gs` require a separate Apps Script deployment and live readback.
 
+## Release gate
+
+Every push/PR is verified by GitHub Actions with locked dependency installation, tests, typecheck and production build. A green repository CI run is required before treating repository code as releasable. Apps Script remains a separately deployed runtime and still requires its own live smoke/readback verification.
+
 ## Verification
 
 ```bash
