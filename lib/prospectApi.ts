@@ -4,7 +4,7 @@ import { extractRecipientEmail, inView, normalizePayload, outreachCopyIssues } f
 import type { ProspectData } from "@/lib/types";
 import { unstable_cache } from "next/cache";
 import { assertAppsScriptUrl, fetchAppsScriptReadResponse, fetchAppsScriptResponse } from "@/lib/appsScriptTransport";
-import { createZohoDraft } from "@/lib/zohoMail";
+import { createZohoDraft, zohoDraftConfigured } from "@/lib/zohoMail";
 
 function configuration() {
   const url = process.env.PROSPECT_API_URL;
@@ -54,7 +54,11 @@ async function readRawProspects(): Promise<unknown> {
 }
 
 export async function readProspects(): Promise<ProspectData> {
-  return normalizePayload(await readRawProspects());
+  const data = normalizePayload(await readRawProspects());
+  if (zohoDraftConfigured()) {
+    data.capabilities = [...new Set([...(data.capabilities ?? []), "ZOHO_DRAFT"])];
+  }
+  return data;
 }
 
 /**
