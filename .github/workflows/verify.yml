@@ -7,9 +7,17 @@ on:
       - ci/verify-prospect-os-v10-20260929
   pull_request:
 
+concurrency:
+  group: prospect-os-verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
