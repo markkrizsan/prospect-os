@@ -299,6 +299,10 @@ main{padding:0 max(16px,4vw) 78px}
 .compose-actions>*:nth-child(2n){border-right:0}
 .compose-actions>*:hover:not(:disabled){background:#1f1e1b}
 .compose-actions .reject{background:#2a0806}
+.compose-actions .zoho-draft{background:#f3ede3;color:var(--black)}
+.compose-actions .zoho-draft kbd{border-color:rgba(0,0,0,.28)}
+.compose-actions .zoho-draft:hover:not(:disabled){background:white}
+.compose-actions .zoho-draft.drafted{background:#1d1c1a;color:#9b958c}
 .compose-actions .mark-sent{background:var(--red);grid-column:1/-1;border-right:0;font-size:9px}
 .compose-actions kbd{
   padding:3px 5px;border:1px solid rgba(255,255,255,.35);
