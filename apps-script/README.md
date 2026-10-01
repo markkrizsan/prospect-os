@@ -4,7 +4,7 @@ Google Apps Script is the Sheet-owned contact/draft/materialization component of
 
 ## Current authority
 
-The live Sheet `OPERATING_CONTRACT` is executable policy. This README describes the repository implementation and must remain consistent with it.
+The live Sheet `OPERATING_CONTRACT` is executable policy. This README describes the repository implementation and must remain consistent with it. The clock trigger is a durable queue consumer/recovery mechanism; correctness never depends on an edit trigger because Apps Script/API writes do not fire installable edit triggers.
 
 ## Responsibilities
 
