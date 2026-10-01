@@ -1,78 +1,101 @@
-# Prospect OS V10 Apps Script backend
+# Prospect OS V10 — Apps Script Materializer
 
-The React/Next.js frontend deploys through Vercel. **Google Apps Script is a separate deployment.** A GitHub or Vercel success does NOT mean changes to `apps-script/Code.gs` are live.
+Google Apps Script is the Sheet-owned contact/draft/materialization component of the Prospect OS production conveyor. It is deployed separately from GitHub/Vercel.
 
-## Production behavior
+## Current authority
 
-- GET /exec?action=list returns MARKET, OUTREACH, OPPORTUNITIES and RUNS, preserving dashboard views and displaying the latest real hourly production metrics. Create the RUNS tab first using the existing canonical Google Sheet schema.
-- MARK_SENT (manually confirmed) updates source statuses, preserves Sent At, checks current recipient/subject/completed draft, assigns follow-up only when no reply/suppression, and upserts PIPELINE. Hidden legacy TODAY is no longer written.
-- REJECT blocks previously SENT records and updates both source statuses without changing historical TODAY.
-- SYNC_SENT repairs recorded SENT records in PIPELINE and conditional follow-up dates. It does not modify legacy TODAY, create a new send, or overwrite replied/advanced outcomes.
-- Web-app writes are serialized under ScriptLock to avoid duplicate pipeline inserts when two actions overlap.
-- Missing OPPORTUNITIES/OUTREACH records or required header columns throw a visible error rather than silently resulting in a partial or fictitious success.
+The live Sheet `OPERATING_CONTRACT` is executable policy. This README describes the repository implementation and must remain consistent with it.
 
-## Deployment required after merging
+## Responsibilities
 
-There is currently **no authorized Apps Script deployment connector** available to this chat. An account owner must update the deployed script explicitly:
+Apps Script:
+- returns MARKET, OPPORTUNITIES, OUTREACH and RUNS to the dashboard
+- materializes already-qualified `QUALIFIED — MATERIALIZE` MARKET rows
+- verifies an explicit public first-party recipient channel from the owned website
+- rechecks active rebuild conflict before contact creation
+- creates matching OPPORTUNITIES + OUTREACH records
+- assigns E01 arm where applicable
+- independently verifies the persisted pair before promoting MARKET
+- records manually confirmed SENT state, follow-up and PIPELINE bookkeeping
+- supports idempotent SENT reconciliation and outcome progression
 
-1. In Vercel project settings locate the **existing** PROSPECT_API_URL (do not paste it or the secret in chat). Open the associated Google Apps Script editor.
-2. Replace its Code.gs with the version from this repository after CI passes. Do not overwrite the spreadsheet ID or substitute another project's source.
-3. Confirm Project Settings → Script Properties includes PROSPECT_API_SECRET with the exact existing matching Vercel secret. Keep secret values private.
-4. Deploy → Manage deployments → Edit current web app → New version → Execute as: Me → Deploy. Preserve the already-authorized server-to-server access setting.
-5. Keep the existing /exec URL when editing the current deployment; if it changes, update PROSPECT_API_URL in Vercel and redeploy.
-6. Refresh the dashboard and press REPAIR FOLLOW-UPS once. Verify all recorded SENT IDs have PIPELINE records, conditional due dates, and remain excluded from the canonical dashboard SEND NOW. Hidden legacy TODAY is not an acceptance source.
-7. On a future real manually sent READY prospect, MARK SENT and verify all five destinations, plus a repeat invocation without duplicate pipeline rows.
-8. Verify MARKET still displays its original research records. If the backend responds with an error, leave the front-end action in an error state until fixed; do not change source statuses manually to hide it.
+Apps Script does **not** discover prospects, decide initial qualification, guess email addresses, or send email.
 
-## Outbound/source integrity
+## Materializer contract
 
-No Apps Script action emails anyone or sources new prospects. Automatic hourly creation remains governed by the authorized Google Sheet connector and the canonical V10 PLAYBOOK, with readback before READY is counted. Do not route denied unattended contact writes through this endpoint as a permission workaround.
+`installProspectMaterializerTrigger()` removes duplicate triggers for the handler and installs one time-driven `runQualifiedMaterializer` trigger every **5 minutes**.
 
-## Regression tests
+Each execution is **output-bound**:
+- target = five successful materializations
+- candidate attempts are variable
+- bounded execution time prevents runaway execution
+- P1 is considered before P2
+- existing materialized IDs are reconciled rather than duplicated
+- active rebuild evidence terminalizes `REJECT — ACTIVE REBUILD CONFLICT`
+- no verified usable first-party channel terminalizes `REJECT — NO VERIFIED CHANNEL`
+- terminal failures do not remain at the head of the queue
+- successful matching OPPORTUNITIES + OUTREACH rows are read back before MARKET changes to `PROMOTE`
 
-`npm test` includes Apps Script behavior tests with a fake in-memory spreadsheet: source tabs returned, MARK_SENT write-through, repeat idempotency, existing SENT repair without losing a real reply, and sent-record rejection protection. Run alongside `npm run typecheck` and `npm run build` through GitHub Actions.
+This fixes the former starvation bug where the oldest five failures could consume every run.
 
-## Source / metrics policy
+## Contact integrity
 
-The current V10 PLAYBOOK in the live Sheet includes the /web offer-match law, five persisted-new-READY-per-hour acceptance target, and TRIAGE's 149-row provisional legacy audit index. RUNS A:S is the separate non-contact production ledger. TRIAGE is never a source of READY prospects until current-site, business, channel, and full outreach are verified and both OPPORTUNITIES + OUTREACH rows are independently read back.
+The materializer checks owned-site pages only and accepts an explicit mailto address or human-visible published company address that passes safety filtering.
 
-## Retired duplicate view
+READY-B company/team inboxes are written as company/team outreach. The materializer does not pretend a generic inbox belongs to a named decision-maker.
 
-The former TODAY Sheet remains hidden and preserved for forensic history. The live dashboard derives SEND NOW exclusively from the two canonical operational records; the backend no longer reads, deletes, or renumbers TODAY. If the Apps Script deployment is not updated, it may still attempt old TODAY mutations. A GitHub/Vercel deployment alone does not update the independently deployed Google Apps Script web app.
+No guessed or inferred email permutation becomes READY.
 
+## Prospect-facing copy
 
-## Simplified queue materializer
+Research fields may contain compact internal framework language. Evidence-led draft generation sanitizes internal terms before they become prospect-facing copy so the materializer and dashboard human-language validator cannot disagree on phrases such as `buyer path`, `proof layer`, `value gap` or `micro-offer`.
 
-Prospect OS now separates research from contact materialization so a scheduled research run cannot be stopped by a contact-write permission boundary.
+Dialogue-first E01 copy is generated in plain prospect-facing language.
 
-Flow:
+## Manual send mutations
 
-`MARKET QUEUED -> QUALIFIED — MATERIALIZE -> V10 READY -> SENT / REJECTED`
+`MARK_SENT`:
+- validates matching source records and recipient/subject/draft before mutation
+- preserves an existing Sent At timestamp on retry
+- updates OPPORTUNITIES + OUTREACH to SENT
+- upserts PIPELINE
+- creates a conditional follow-up only when no reply/suppression is present
+- is idempotent
 
-- The ChatGPT Queue Engine only researches and updates non-contact MARKET fields.
-- `runQualifiedMaterializer` runs inside Google Apps Script under the spreadsheet owner's Google authorization.
-- It processes up to five `QUALIFIED — MATERIALIZE` rows per execution.
-- It checks the owned website for a published company email, writes matching OPPORTUNITIES + OUTREACH rows, reads them back, and only then marks MARKET `PROMOTE`.
-- It never sends email.
-- It never guesses an address.
-- A candidate with no owned-site public email stays `QUALIFIED — MATERIALIZE` for later contact resolution.
+`SYNC_SENT` reconciles records already marked SENT. It never creates a send.
 
-### One-time production activation
+The dashboard's bulk MARK ALL SENT action intentionally reuses this verified MARK_SENT path for an explicit snapshot of IDs. No email is sent by the backend.
 
-Apps Script is deployed independently from GitHub. After this Code.gs version passes CI:
+Hidden legacy TODAY is not an operational state owner and is not written by the current backend.
 
-1. Open the existing Prospect OS Apps Script project attached to the production web app.
-2. Replace Code.gs with the current repository `apps-script/Code.gs`.
+## Deploying Code.gs
+
+GitHub/Vercel success does **not** update the Apps Script Web app.
+
+After a `Code.gs` change:
+
+1. Open the existing production Apps Script project associated with the server-side `PROSPECT_API_URL`.
+2. Replace its `Code.gs` with the current repository version.
 3. Save.
-4. In **Deploy -> Manage deployments**, edit the existing Web app deployment and create a new version. Keep the existing execution/access settings and production URL.
-5. In the Apps Script editor, select `installProspectMaterializerTrigger` and click **Run** once. Approve the requested spreadsheet + external-request permissions.
-6. Open **Triggers** and verify one time-driven trigger exists for `runQualifiedMaterializer`, every 15 minutes.
-7. Run `runQualifiedMaterializer` once manually as a canary only when MARKET has a `QUALIFIED — MATERIALIZE` row.
-8. Verify that exactly one complete matching OPPORTUNITIES + OUTREACH pair appears, both are `V10 READY`, MARKET changes to `PROMOTE`, and no email is sent.
+4. Preserve the existing private `PROSPECT_API_SECRET` Script Property.
+5. Deploy → Manage deployments → edit the existing Web app → create a new version.
+6. Preserve the existing execution/access settings and production `/exec` endpoint when possible.
+7. Run `installProspectMaterializerTrigger` once if the deployed trigger logic/cadence changed or trigger state must be repaired.
+8. Verify exactly one `runQualifiedMaterializer` time-driven trigger exists and is scheduled every 5 minutes.
+9. Verify live Sheet evidence: terminal failures advance, a legitimate staged row produces one complete matching V10 READY pair, readback passes, MARKET promotes, and no email is sent.
 
-Do not create multiple materializer triggers. Re-running `installProspectMaterializerTrigger` safely replaces the prior trigger for that handler.
+Do not create multiple materializer triggers.
 
+## Regression verification
 
-### Revenue-signal hardening
+Repository verification:
 
-The materializer prioritizes P1 before P2, preserves evidence-backed PAIN/TIMING/ECONOMICS/AUTHORITY/SCOPE/INTENT/CONFIDENCE labels, rechecks for an active rebuild before writing contact records, and only extracts an email from an explicit mailto link or human-visible owned-site text. It does not silently upgrade every staged lead to HIGH.
+```bash
+npm test
+npm run typecheck
+npm run build
+```
+
+Tests cover SENT bookkeeping/idempotency, schema failure, outcome progression, contact extraction, active rebuild detection, materializer qualification behavior, E01 assignment and prospect-facing jargon sanitation.
+
+Live deployment must still be verified separately through the canonical Sheet. Passing repository tests is not deployment proof.
