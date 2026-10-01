@@ -76,7 +76,7 @@ The dashboard derives SEND NOW only from the joined canonical OPPORTUNITIES + OU
 ## Materializer reliability
 
 Current repository behavior:
-- trigger installer creates one `runQualifiedMaterializer` trigger every **5 minutes**
+- trigger installer creates one `runQualifiedMaterializer` trigger every **1 minute**
 - execution is **output-bound**, targeting five successful materializations, not five candidate attempts
 - execution also respects a bounded Apps Script time budget
 - active rebuild conflict terminalizes
