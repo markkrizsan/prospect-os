@@ -110,8 +110,14 @@ Tool, connector, authorization, timeout, safety or runtime failures are recovery
 | PROSPECT_API_URL | Yes | Exact active Apps Script `/exec` URL |
 | PROSPECT_API_SECRET | Yes | Matches Apps Script Script Property |
 | DASHBOARD_KEY | Yes | Private dashboard access key |
+| ZOHO_CLIENT_ID | For draft bridge | Zoho server-based OAuth client ID |
+| ZOHO_CLIENT_SECRET | For draft bridge | Zoho server-based OAuth client secret |
+| ZOHO_REFRESH_TOKEN | For draft bridge | Offline refresh token with `ZohoMail.messages.CREATE,ZohoMail.accounts.READ` |
+| ZOHO_FROM_ADDRESS | For draft bridge | Exact Zoho From address used for outreach |
 
 Never expose these through `NEXT_PUBLIC_`.
+
+The Zoho integration is **draft-only**: strict READY → create Zoho draft → human review/send → MARK SENT. See `docs/ZOHO_DRAFT_BRIDGE.md`.
 
 GitHub/Vercel deployment does **not** deploy Apps Script. Code changes to `apps-script/Code.gs` require a separate Apps Script deployment and live readback.
 
