@@ -692,8 +692,12 @@ function subjectForCompany_(company) {
 
 function draftForQualified_(company, gap, business, microOffer) {
   const safeCompany = String(company || "").trim();
-  const observation = sentence_(gap);
-  const proof = sentence_(business);
+  // Research fields intentionally use compact internal language. Sanitize them
+  // before they ever become prospect-facing copy so source rows cannot claim
+  // READY while the dashboard's human-language gate correctly rejects the draft.
+  const observation = sentence_(prospectFacingText_(gap));
+  const proof = sentence_(prospectFacingText_(business));
+  const offer = prospectFacingText_(microOffer || "an annotated homepage pass showing what I'd tighten");
   return [
     "Hi " + safeCompany + " team,",
     "",
@@ -701,10 +705,36 @@ function draftForQualified_(company, gap, business, microOffer) {
     "",
     proof ? "The business itself looks stronger than that first impression suggests: " + proof : "The business looks stronger than that first impression suggests.",
     "",
-    "If useful, I can send " + String(microOffer || "an annotated homepage pass showing what I'd tighten").replace(/^[Oo]ne /, "one ").replace(/\.$/, "") + ".",
+    "If useful, I can send " + String(offer).replace(/^[Oo]ne /, "one ").replace(/\.$/, "") + ".",
     "",
     "Mark"
   ].join("\n");
+}
+
+function prospectFacingText_(value) {
+  let text = String(value || "").trim();
+  const replacements = [
+    [/first-scroll/gi, "top of the homepage"],
+    [/proof map/gi, "project examples"],
+    [/buyer[- ]path/gi, "how customers move through the site"],
+    [/procurement path/gi, "how procurement teams find what they need"],
+    [/procurement-ready/gi, "easier for procurement teams to assess"],
+    [/authority system/gi, "credibility"],
+    [/conversion architecture/gi, "inquiry flow"],
+    [/offer architecture/gi, "service structure"],
+    [/intervention delta/gi, "specific improvement"],
+    [/value gap/gi, "website gap"],
+    [/micro-offer/gi, "useful idea"],
+    [/owned experience/gi, "website"],
+    [/digital representation/gi, "website"],
+    [/proof layer/gi, "project proof"],
+    [/qualification story/gi, "how customers assess fit"],
+    [/application\/proof/gi, "application examples"],
+    [/project-proof/gi, "project examples"],
+    [/authority\/procurement/gi, "credibility and procurement information"]
+  ];
+  replacements.forEach(function (pair) { text = text.replace(pair[0], pair[1]); });
+  return text;
 }
 
 function sentence_(value) {
