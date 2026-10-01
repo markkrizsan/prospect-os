@@ -43,6 +43,13 @@ Touched production candidates terminalize to `QUALIFIED — MATERIALIZE` or `REJ
 
 ## Reliability standard
 
+- The durable Sheet queue is the handoff boundary between qualification and contact materialization.
+- One materializer layer owns retry/continuation behavior; do not stack independent retry loops across worker, API and Apps Script.
+- Materializer mutations must remain idempotent and lock-protected so a repeated/overlapping execution cannot create duplicate operational records.
+- Permanent candidate failures terminalize and create replacement demand; transient runtime failures may be retried only within a bounded execution/recovery policy.
+- The one-minute materializer trigger is a queue consumer/recovery mechanism, not proof of completion. Hourly success still requires independent READY readback.
+
+
 - Last-known-good dashboard state may remain visible while an upstream dependency is slow, but freshness is explicit.
 - Older cached data never overwrites a newer live/post-mutation result.
 - READY/SENT integrity mismatches fail closed.
@@ -71,6 +78,6 @@ Do not optimize on opens or tiny samples.
 Normal hourly production runs do not invent lanes, canaries, buffers, counters, states or architecture.
 
 For actual code/release changes:
-observe → reproduce → patch → regression tests/typecheck/build → deploy the relevant runtime → verify live readback.
+observe → reproduce → patch → regression tests → typecheck → build → CI gate → deploy the relevant runtime → smoke test → verify live readback → observe the first real production run. If an invariant breaks, roll back to the last known-good version rather than layering another speculative fix.
 
 A release-level smoke test is not a production-run completion condition and never replaces the five-new-READY invariant.
