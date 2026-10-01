@@ -205,7 +205,7 @@ export async function createZohoDraft(input: ZohoDraftInput): Promise<ZohoDraftR
     }
   ) as ZohoEnvelope<Record<string, unknown>>;
 
-  const data = payload.data && typeof payload.data === "object" ? payload.data : {};
+  const data: Record<string, unknown> = payload.data ?? {};
   return {
     draftId: String(data.messageId || data.mailId || data.id || ""),
   };
